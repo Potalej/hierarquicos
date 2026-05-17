@@ -1,0 +1,4 @@
+__pycache__
+fortran/test
+fortran/tree_time
+*.mod
