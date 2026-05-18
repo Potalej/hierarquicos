@@ -1,7 +1,7 @@
 FC = gfortran
 FFLAGS = -O3
 
-SRC = node.f90 tree.f90
+SRC = tree.f90
 
 TARGET ?= test
 

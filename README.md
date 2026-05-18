@@ -6,7 +6,11 @@ Estudo de métodos hierárquicos para N-corpos. Para começar, estou mexendo com
 
 Implementado em Python no diretório `srcpy`, e em Fortran no diretório `fortran`. A princípio, parece funcionar nos conformes. Vamos ver. Estou seguindo a referência [1].
 
+Fiz algumas mudanças para melhorar a performance, sem usar ponteiros e todas essas coisas. Parece ok.
+
 ![](img/f_quadtree_example.png)
+
+![](img/f_forces_time_and_error.png)
 
 ---
 
