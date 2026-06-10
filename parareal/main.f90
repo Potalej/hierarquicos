@@ -1,5 +1,6 @@
 PROGRAM parareal_test
-    USE parareal_mod    
+    USE parareal_mod 
+    USE api_mod   
     IMPLICIT NONE
 
     INTEGER :: N, num_windows, N_itermax, qntt
@@ -52,6 +53,7 @@ SUBROUTINE test (N, num_windows, N_itermax, tf, theta, G, eps, maxerror, qntt)
     REAL(16), ALLOCATABLE :: q1(:,:,:), p1(:,:,:), u(:,:,:), uk(:,:)
     REAL(16) :: erro, timer_0, timer_1
     INTEGER :: i, j
+    REAL(16) :: init_E, init_J(3), init_P(3), error_E, error_J, error_P
 
     ALLOCATE(m(N))
     ALLOCATE(q0(N,3))
@@ -59,7 +61,11 @@ SUBROUTINE test (N, num_windows, N_itermax, tf, theta, G, eps, maxerror, qntt)
     p0 = 0.0d0
 
     CALL generate_initial_values(N, m, q0)
-    q0(:,3) = 0.0d0
+    ! q0(:,3) = 0.0d0
+
+    init_E = total_energy(m, q0, p0, G, eps)
+    init_J = total_linear_momentum(p0)
+    init_P = total_angular_momentum(q0, p0)
     
     ALLOCATE(q1(num_windows, N,3))
     ALLOCATE(p1(num_windows, N,3))
@@ -108,8 +114,17 @@ SUBROUTINE test (N, num_windows, N_itermax, tf, theta, G, eps, maxerror, qntt)
     erro = NORM2(u(num_windows,1:N,:) - q1(num_windows,:,:))**2
     erro = erro + NORM2(u(num_windows,N+1:,:) - p1(num_windows,:,:))**2
     erro = SQRT(erro)/(6*N)
+    
+    q0 = u(num_windows,1:N,:)
+    p0 = u(num_windows,N+1:,:)
+    error_E = ABS(total_energy(m, q0, p0, G, eps) - init_E)
+    error_J = NORM2(total_angular_momentum(q0, p0) - init_J)
+    error_P = NORM2(total_linear_momentum(p0) - init_P)
 
     WRITE(*,'(A15," = ",ES12.4)') '||Par. - Seq.||', erro
+    WRITE(*,'(A15," = ",ES12.4)') '||E - E_0||', error_E
+    WRITE(*,'(A15," = ",ES12.4)') '||J - J_0||', error_J
+    WRITE(*,'(A15," = ",ES12.4)') '||P - P_0||', error_P
     WRITE(*,'(A15," = ",F12.4,A2)') 'Total time', timer_1 - timer_0, 's'
 
 END SUBROUTINE

@@ -96,6 +96,14 @@ SUBROUTINE integrate_parareal (m, q0, p0, tf, num_windows, N_itermax, theta, G, 
     INTEGER :: i, k, N, iterations
     REAL(16), ALLOCATABLE :: U(:,:,:,:), U_til(:,:,:), u0(:,:)
     REAL(16) :: timer_0, timer_1, timer_total
+    REAL(16) :: init_E, init_J(3), init_P(3), error_E, error_J, error_P
+    REAL(16), ALLOCATABLE :: q(:,:), p(:,:)
+
+    init_E = total_energy(m, q0, p0, G, eps)
+    init_J = total_linear_momentum(p0)
+    init_P = total_angular_momentum(q0, p0)
+    ALLOCATE(q(N,3))
+    ALLOCATE(p(N,3))
 
     window_size = tf / num_windows
     dt_grosseiro = window_size
@@ -103,6 +111,7 @@ SUBROUTINE integrate_parareal (m, q0, p0, tf, num_windows, N_itermax, theta, G, 
 
     N = SIZE(q0,1)
     ALLOCATE(u0(2*N,3))
+    
     u0(1:N,  :) = q0
     u0(N+1:, :) = p0
     
@@ -145,6 +154,15 @@ SUBROUTINE integrate_parareal (m, q0, p0, tf, num_windows, N_itermax, theta, G, 
         ! error = NORM2(U(k+1, num_windows,:,:) - U_til(num_windows,:,:))/(6*N)
 
         WRITE(*,'(A6,I4,A9,ES12.4,A8,ES12.4)') "Iter.:", iterations, " / Error:", error, " / Time:", timer_1 - timer_0
+        q = u(k+1,num_windows,1:N,:)
+        p = u(k+1,num_windows,N+1:,:)
+        error_E = ABS(total_energy(m, q, p, G, eps) - init_E)
+        error_J = NORM2(total_angular_momentum(q, p) - init_J)
+        error_P = NORM2(total_linear_momentum(p) - init_P)
+        WRITE(*,'(A15," = ",ES12.4)') '||E - E_0||', error_E
+        WRITE(*,'(A15," = ",ES12.4)') '||J - J_0||', error_J
+        WRITE(*,'(A15," = ",ES12.4)') '||P - P_0||', error_P
+
         IF (error <= maxerror) EXIT
     END DO
 

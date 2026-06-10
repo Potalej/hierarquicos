@@ -105,4 +105,51 @@ FUNCTION compute_forces_direct_par (m, x, y, z, G, eps) RESULT (forces)
     !$OMP END PARALLEL
 END FUNCTION
 
+FUNCTION total_energy (m, qs, ps, G, eps)
+    REAL(16), INTENT(IN) :: m(:), qs(:,:), ps(:,:), G, eps
+    REAL(16) :: total_energy, V, rab
+    INTEGER :: a, b
+
+    total_energy = 0.0_16
+    DO a = 1, SIZE(m)
+        total_energy = total_energy + 0.5_16*DOT_PRODUCT(ps(a,:),ps(a,:))/m(a)
+        DO b = 1, a - 1
+            rab = SQRT(NORM2(qs(b,:)-qs(a,:))**2 + eps*eps)
+            V = - G * m(a) * m(b) / rab
+            total_energy = total_energy + V
+        END DO
+    END DO 
+END FUNCTION
+
+FUNCTION total_linear_momentum (ps) RESULT(P)
+    REAL(16), INTENT(IN) :: ps(:,:)
+    REAL(16) :: P(3)
+    INTEGER :: a
+
+    P = 0.0_16
+    DO a = 1, SIZE(ps,1)
+        P = P + ps(a,:)
+    END DO
+END FUNCTION
+
+FUNCTION cross_product (u, v)
+  REAL(16), DIMENSION(:), INTENT(IN) :: u, v
+  REAL(16), DIMENSION(3)             :: cross_product
+
+  cross_product(1) =  u(2)*v(3)-v(2)*u(3)
+  cross_product(2) = -u(1)*v(3)+v(1)*u(3)
+  cross_product(3) =  u(1)*v(2)-v(1)*u(2)
+END FUNCTION
+
+FUNCTION total_angular_momentum (qs, ps) RESULT(J)
+    REAL(16), INTENT(IN) :: qs(:,:), ps(:,:)
+    REAL(16) :: J(3)
+    INTEGER :: a
+
+    J = 0.0_16
+    DO a = 1, SIZE(ps,1)
+        J = J + cross_product(qs(a,:), ps(a,:))
+    END DO
+END FUNCTION
+
 END MODULE
