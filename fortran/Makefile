@@ -1,7 +1,8 @@
 FC = gfortran
-FFLAGS = -O3
+FFLAGS = -O3 -march=native -fopenmp
 
-SRC = tree.f90
+SRC = octree.f90 morton.f90
+# SRC = node_pointer.f90 octree_pointer.f90
 
 TARGET ?= test
 
