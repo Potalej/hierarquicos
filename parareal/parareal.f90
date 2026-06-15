@@ -12,7 +12,7 @@ FUNCTION G_til (m, u0, dt, qntt, theta, G, eps)
     
     REAL(16) :: forces(INT(SIZE(u0,1)/2),3)
     REAL(16) :: q(INT(SIZE(u0,1)/2),3), p(INT(SIZE(u0,1)/2),3)
-    INTEGER :: N, i
+    INTEGER :: N, i, a
     
     N = SIZE(q,1)
     q = u0(1:N,:)
@@ -22,13 +22,17 @@ FUNCTION G_til (m, u0, dt, qntt, theta, G, eps)
         DO i=1, qntt
             forces = compute_forces_direct(m, q(:,1), q(:,2), q(:,3), G, eps)
             p = p + dt * forces
-            q = q + dt * p
+            DO a = 1, SIZE(m)
+                q(a,:) = q(a,:) + dt * p(a,:) / m(a)
+            END DO
         END DO
     ELSE
         DO i=1, qntt
             forces = compute_forces(m, q(:,1), q(:,2), q(:,3), theta, G, eps, .TRUE.)
             p = p + dt * forces
-            q = q + dt * p
+            DO a = 1, SIZE(m)
+                q(a,:) = q(a,:) + dt * p(a,:) / m(a)
+            END DO
         END DO
     ENDIF
 
@@ -42,7 +46,7 @@ FUNCTION F_til (m, u0, dt, qntt, theta, G, eps)
     REAL(16) :: forces(INT(SIZE(u0,1)/2),3)
     REAL(16) :: q(INT(SIZE(u0,1)/2),3), p(INT(SIZE(u0,1)/2),3)
     REAL(16) :: p_half(INT(SIZE(u0,1)/2),3)
-    INTEGER :: qntt, i, N
+    INTEGER :: qntt, i, N, a
     
     N = SIZE(q,1)
     q = u0(1:N,:)
@@ -52,7 +56,9 @@ FUNCTION F_til (m, u0, dt, qntt, theta, G, eps)
     DO i=1, qntt
         ! verlet
         p_half = p + 0.5d0 * dt * forces
-        q = q + dt * p_half
+        DO a = 1, SIZE(m)
+            q(a,:) = q(a,:) + dt * p_half(a,:) / m(a)
+        END DO
         forces = compute_forces_direct(m, q(:,1), q(:,2), q(:,3), G, eps)
         p = p_half + 0.5d0 * dt * forces
     END DO
@@ -67,7 +73,7 @@ FUNCTION F_til_PAR (m, u0, dt, qntt, theta, G, eps)
     REAL(16) :: forces(INT(SIZE(u0,1)/2),3)
     REAL(16) :: q(INT(SIZE(u0,1)/2),3), p(INT(SIZE(u0,1)/2),3)
     REAL(16) :: p_half(INT(SIZE(u0,1)/2),3)
-    INTEGER :: qntt, i, N
+    INTEGER :: qntt, i, N, a
     
     N = SIZE(q,1)
     q = u0(1:N,:)
@@ -77,7 +83,9 @@ FUNCTION F_til_PAR (m, u0, dt, qntt, theta, G, eps)
     DO i=1, qntt
         ! verlet
         p_half = p + 0.5d0 * dt * forces
-        q = q + dt * p_half
+        DO a = 1, SIZE(m)
+            q(a,:) = q(a,:) + dt * p_half(a,:) / m(a)
+        END DO
         forces = compute_forces_direct_par(m, q(:,1), q(:,2), q(:,3), G, eps)
         p = p_half + 0.5d0 * dt * forces
     END DO
