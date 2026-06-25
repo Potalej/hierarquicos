@@ -62,12 +62,18 @@ SUBROUTINE init (self, m, x, y, z, save_txt)
     CALL self % allocate_nodes()
     
     infos_root = node_size_center(x, y, z)
-    CALL self % add_node(infos_root(1), infos_root(2), infos_root(3), 1.2*infos_root(4), 0, idx_root)
+    CALL self % add_node(infos_root(1), infos_root(2), infos_root(3), &
+            self%side_amplificator*infos_root(4), 0, idx_root)
 
     ! if wants to save_txt
     self % save_txt = -1
     IF (PRESENT(save_txt)) THEN
         self % save_txt = save_txt
+        WRITE (self % save_txt, *) self % N
+        WRITE (self % save_txt, *) m
+        WRITE (self % save_txt, *) x
+        WRITE (self % save_txt, *) y
+        WRITE (self % save_txt, *) z
         WRITE (self % save_txt, *) self%ns_cx(1), self%ns_cy(1), self%ns_cz(1), self%ns_halfside(1)
     ENDIF
 
@@ -436,7 +442,7 @@ SUBROUTINE evaluate_quad (self)
             top = top - 1
 
             ! If its a particle, udpate the quadrupole vector
-            IF (self % ns_type(p) == 1 .OR. self % ns_depth(p) - self % ns_depth(node_idx) >= 4) THEN
+            IF (self % ns_type(p) == 1) THEN
                 ! get information
                 pm = self % ns_mass(p)
                 px = self % ns_qcm_x(p)

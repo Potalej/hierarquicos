@@ -14,6 +14,12 @@ Fiz algumas mudanças para melhorar a performance, sem usar ponteiros e todas es
 
 ![](img/f_forces_time_and_error.png)
 
+## Atualização: Sim, Morton é bom
+
+Implementei o método usando Morton + quadrupolos, e o desempenho saiu melhor que a implementação anterior, que era intuitiva apenas.
+
+![](img/morton_vs_intuitive.png)
+
 ---
 
 # Parareal
