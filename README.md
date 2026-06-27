@@ -16,9 +16,17 @@ Fiz algumas mudanças para melhorar a performance, sem usar ponteiros e todas es
 
 ## Atualização: Sim, Morton é bom
 
-Implementei o método usando Morton + quadrupolos, e o desempenho saiu melhor que a implementação anterior, que era intuitiva apenas.
+Implementei o método usando Morton + quadrupolos, e o desempenho aparentemente saiu melhor que a implementação anterior, que era intuitiva apenas.
 
 ![](img/morton_vs_intuitive.png)
+
+## Diferença entre a sugestão de Barnes e usando Morton
+
+```python
+python barnes_morton_keys.py
+```
+
+![](img/barnes_morton_keys.png)
 
 ---
 
