@@ -4,7 +4,7 @@
 ! with N in [10, 1e4] (10 by 10) with 50 tests
 ! by value of N.
 ! It achieves the O(N log N), as expected :)
-PROGRAM octree_time
+PROGRAM octpole_time
     USE octree_mod
     USE morton_octree_mod
     USE omp_lib
@@ -14,8 +14,8 @@ PROGRAM octree_time
 
     file = 45
 
-    OPEN(file, file = "out/octree_time.txt", status="replace")
-    CALL test_tree_time(100, 20000, 100, 10, file)
+    OPEN(file, file = "out/octpoles_time.txt", status="replace")
+    CALL test_pole_time(100, 20000, 100, 10, file)
     ! CALL test_tree_time_morton(1000, 20000, 100, 1, file)
 CONTAINS
 
@@ -35,7 +35,7 @@ SUBROUTINE generate_initial_values (N, m, x, y, z)
     z = qs(:, 3)
 END SUBROUTINE
 
-SUBROUTINE test_tree_time (Nmin, Nmax, Nstep, tests, file)
+SUBROUTINE test_pole_time (Nmin, Nmax, Nstep, tests, file)
     INTEGER, INTENT(IN) :: Nmin, Nmax, Nstep, tests, file
     INTEGER :: N, i
     REAL(8), ALLOCATABLE :: m(:), x(:), y(:), z(:)
@@ -51,11 +51,12 @@ SUBROUTINE test_tree_time (Nmin, Nmax, Nstep, tests, file)
             
             CALL generate_initial_values(N, m, x, y, z)
 
-            CALL CPU_TIME(time_start)
-
             ! now test the tree
             ALLOCATE(tree)
             CALL tree % init(m, x, y, z)
+
+            CALL CPU_TIME(time_start)
+            CALL tree % evaluate_quad()
             CALL CPU_TIME(time_finish)
 
             total = time_finish - time_start

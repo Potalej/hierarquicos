@@ -20,12 +20,12 @@ PROGRAM forces_time
     thetas(3) = 0.25d0
     thetas(4) = 0.5d0
 
-    OPEN(file, file = "out/forces_time_morton_parallel_20C_N10K.txt", status="replace")
-    CALL test_forces_time_morton(500, 10000, 500, thetas, 0.1d0, 20, file)
-    CLOSE(file)
+    !OPEN(file, file = "out/forces_time_morton_parallel_20C_N10K.txt", status="replace")
+    !CALL test_forces_time_morton(500, 10000, 500, thetas, 0.1d0, 20, file)
+    !CLOSE(file)
 
     OPEN(file, file = "out/forces_time_without_morton_parallel_20C_N10K.txt", status="replace")
-    CALL test_forces_time(500, 10000, 500, thetas, 0.1d0, 20, file)
+    CALL test_forces_time(100, 20000, 100, thetas, 0.1d0, 10, file)
     CLOSE(file)
 CONTAINS
 
