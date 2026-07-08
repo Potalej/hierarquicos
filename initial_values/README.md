@@ -110,14 +110,19 @@ V = \dfrac{1}{2} \int \rho(\vec x) \Phi(\vec x) d^3x = 2 \pi \int_0^\infty \rho(
 $$
 
 As long as the function $f$ became from the Boltzmann Equation, we can expect the values to be virialized/in equilibrium:
+
 $$
 Q = - \dfrac{2 T}{V} = 1,
 $$
+
 where $T$ is the kinect energy. This means that
+
 $$
 T = \dfrac{3 \pi}{64}\dfrac{G M^2}{b}
 $$
+
 and the total energy is:
+
 $$
 E = - \dfrac{3 \pi}{64}\dfrac{G M^2}{b}.
 $$
