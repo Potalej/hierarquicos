@@ -63,11 +63,67 @@ $$
 \rho(\vec x) = \int f(\vec x, \vec v) \ d^3 v.
 $$
 
-2. If we suppose initial equilibrium (in some sense), $\partial f / \partial t = 0$. By the Jeans Theorem, $f$ depends only on the first integrals of the system, and if the system is spherically isotropic, it depends only on the specific energy.
+2. If we suppose initial equilibrium (in some sense), $\partial f / \partial t = 0$. By the Jeans Theorem, $f$ depends only on the first integrals of the system, and if the system is spherically isotropic, it depends only on the specific energy:
+
+$$
+E(x, v) = \dfrac{1}{2} v^2 + \Phi(x).
+$$
 
 3. To find $f(E)$ we use the Eddington inversion formula.
 
-4. With $f(E)$ we generate $0 \leq v \leq v_{escape}$, with $v_{escape} = \sqrt{- 2 \Phi(r)}$, with probability $P(v | r) \propto v^2 f(E)$.
+4. With $f(E)$ we generate $0 \leq v \leq v_{escape}$, with $v_{escape} = \sqrt{- 2 \Phi(r)}$, with probability $p(v | r) \propto v^2 f(E)$.
+
+Ignoring the unknow (for now) origin of these things, the Edding inversion formula gives:
+
+$$
+f(\vec x, \vec v) = \dfrac{24 \sqrt{2}}{7 \pi^3} \dfrac{b^2}{G^5 M^4} (-E(\vec x, \vec v))^{7/2} \equiv f(E).
+$$
+
+Considering a volume element in the velocity space between $v$ and $dv$, we have 
+
+$$
+p(v | r) \propto 4 \pi v^2 f(E) dv.
+$$
+
+Using the value of $E$, we get
+
+$$
+p(v | r) \propto v^2 \left(-\dfrac{v^2}{2} - \Phi(r)\right)^{7/2}.
+$$
+
+Let's suposse that we don't want particles with a velocity bigger than the escape velocity $v_{esc}(r) = \sqrt{- 2 \Phi(r)}$. Defining $q := v/v_{esc} \in [0,1]$, we can rewrite the probability:
+
+$$
+p(v | r) \propto q^2 (1 - q^2)^{7/2} =: g(q).
+$$
+
+To generate a velocity given $r$, we need to use rejection (von Neumann). First, $g(q)$ has a global maximum (as $q \geq 0$) at $q_{max} = \sqrt{2}/3$, with $g(q_{max}) \approx 0.0922 $. Now we do:
+
+1. Generate $q \sim U[0,1]$.
+2. Generate $y = g(q_{max}) \cdot y_0$, with $y_0 \sim U[0,1]$.
+3. If $y \leq g(q)$, we accept and define $v = q \ v_{esc}$. If not, go to (1).
+
+We can expect some properties of the generated initial values. First, the potential energy $V$ can be calculated with:
+
+$$
+V = \dfrac{1}{2} \int \rho(\vec x) \Phi(\vec x) d^3x = 2 \pi \int_0^\infty \rho(r) \Phi(r) r^2 dr = - \dfrac{3 \pi}{32} \dfrac{G M^2}{b}.
+$$
+
+As long as the function $f$ became from the Boltzmann Equation, we can expect the values to be virialized/in equilibrium:
+$$
+Q = - \dfrac{2 T}{V} = 1,
+$$
+where $T$ is the kinect energy. This means that
+$$
+T = \dfrac{3 \pi}{64}\dfrac{G M^2}{b}
+$$
+and the total energy is:
+$$
+E = - \dfrac{3 \pi}{64}\dfrac{G M^2}{b}.
+$$
+
+Obviously this is exact only with $N \to \infty$, but we can expected something nearly these values with finite $N$.
+
 
 ## Using galpy
 
@@ -95,19 +151,28 @@ vxs, vys, vzs = orbits.vx(), orbits.vy(), orbits.vz()
 
 ![](./plummer_radius_example_cutoff.png)
 
-For the velocities, ignoring the unknow (for now) origin of these things, the Edding inversion formula gives:
+To verify the velocities we need to get the random variables $q = v / v_{esc}$ instead of just $v$.
 
-$$
-f(\vec x, \vec v) = \dfrac{24 \sqrt{2}}{7 \pi^3} \dfrac{b^2}{G^5 M^4} (-E(\vec x, \vec v))^{7/2}.
-$$
+```python
+rs = np.linalg.norm(qs, axis=1)
+pot = potential.PlummerPotential(amp=1.0, b=b, normalize=False)
+v_esc = np.sqrt(-2.0 * pot(rs,0))
+qs = vs / v_esc
+```
 
-Confirming the Jeans theorem, we just need to choose a specific energy $E$:
+Normalizing the values to compare with the PDF, we get:
 
-$$
-f(E) \propto (-E)^{7/2}
-$$
+![](./plummer_velocity_example.png)
 
-...tomorrow I finish this.
+For the dynamic properties, we can see that $N=10^3$ is not really so much, but we have something near the expected:
+
+```
+Dynamical properties (||real - expected||):
+Potential V: 0.006832137175154629
+Kinect T:    0.00337158496224943
+Total E:     0.010203722137404059
+Virial Q:    0.022781918828791548
+```
 
 ---
 
