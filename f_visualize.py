@@ -53,5 +53,6 @@ for log in logs:
   halfsize_node = root_hs * 2**(-subnode_depth)
   plot_boundaries_node(cx, cy, halfsize_node)
 
+plt.savefig("img/f_quadtree_example.pdf")
 plt.title("Example of a quadtree generated with Fortran")
 plt.savefig("img/f_quadtree_example.png")
