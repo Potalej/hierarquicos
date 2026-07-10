@@ -55,25 +55,72 @@ $$
 y = \sqrt{r^2 - z^2} \sin{2 \pi X_3}.
 $$
 
-The theory to generate velocities is a bit more complex and I don't understand it very well yet, so I'll not write it here. I'm using (Bovy, 2026) to learn it. The basic idea is:
+## Velocities and some very funny theory
 
-1. We need to find some $f(x,v)$ that respect the collisionless Boltzmann equation. In fact we have:
+To generate velocities we need to choose the way we want the system to evolve. We'll think that's ok that no direction is the favorite for the velocity, so the system is *isotropic*. This is apparently the most common and the simpler to.
 
-$$
-\rho(\vec x) = \int f(\vec x, \vec v) \ d^3 v.
-$$
+### Collisionless Boltzmann equation
 
-2. If we suppose initial equilibrium (in some sense), $\partial f / \partial t = 0$. By the Jeans Theorem, $f$ depends only on the first integrals of the system, and if the system is spherically isotropic, it depends only on the specific energy:
+First, let's consider a distribution function $f(\vec x, \vec v)$ for the bodies that relates to $\rho$ as:
 
 $$
-E(x, v) = \dfrac{1}{2} v^2 + \Phi(x).
+\rho(\vec x) = \int d^3 v \ f(\vec x, \vec v).
 $$
 
-3. To find $f(E)$ we use the Eddington inversion formula.
+As long as no body should just appear ou disappear, $f$ represents a conservative field, so it's flow preserves volume. By the Liouville Theorem we get
 
-4. With $f(E)$ we generate $0 \leq v \leq v_{escape}$, with $v_{escape} = \sqrt{- 2 \Phi(r)}$, with probability $p(v | r) \propto v^2 f(E)$.
+$$
+\dfrac{d f}{dt} = \dfrac{\partial f}{\partial t} + \dfrac{d \vec x}{dt} \dfrac{\partial f}{\partial \vec x} + \dfrac{d \vec v}{dt} \dfrac{\partial f}{\partial \vec v} = 0.
+$$
 
-Ignoring the unknow (for now) origin of these things, the Edding inversion formula gives:
+This is the *Continuity Equation*, or as it's know in the streets: *the collisionless Boltzmann equation*.
+
+In fact, as long as we are in a Hamiltonian system and all this thing can be done using $(\vec q, \vec p)$ instead of $(\vec x, \vec v)$, this is just the equation for an observable under the Hamiltonian system using the Poisson bracket:
+
+$$
+\dfrac{\partial f}{\partial t} + \{H, f\}_{(\vec p, \vec q)} = 0.
+$$
+
+### Jeans Theorem
+
+It's important to note that if we consider a system under equilibrium (in some sense), $\partial f / \partial t = 0$, therefore what we have is the Jeans Theorem: *any function of the integrals of motion is a solution of the collisionless Boltzmann equation in equilibrium, and any solution of this equation only depends on the integrals of motion*. The proof is trivial at this point.
+
+### Ergodic distribution functions
+
+We this Theorem we can define the *relative potential* and the *relative/specific energy*, respectively, as:
+
+$$
+\Psi = - \Phi + \Phi_0,
+\quad
+\mathcal E = - E + \Phi_0 = \Psi - \dfrac{1}{2} v^2,
+$$
+
+where $\Phi_0$ is some convenient constant and $v = |\vec v|$. It would be good to find some function $f$ that only depends on $\mathcal E$, as they have a cool name: *ergodic distribution function*. In this case we have:
+
+$$
+\rho(r) = \int d \vec v \ f(r, \vec v) = 4 \pi \int dv \ v^2 f(\mathcal E)
+= 4 \pi \int_0^\Psi d \mathcal E \ \sqrt{2 (\Psi - \mathcal E)} f(\mathcal E).
+$$
+
+The potential is spheric and therefore monotonic radially, so we can write $\rho$ as a function of $\Psi$ in a well-defined way:
+
+$$
+\dfrac{1}{\sqrt{8} \pi} \rho(\Psi) = 2 \int_0^\Psi d \mathcal E \ \sqrt{\Psi - \mathcal E} \ f (\mathcal E).
+$$
+
+We then differentiate it wrt to $\Psi$:
+
+$$
+\dfrac{1}{\sqrt{8} \pi} \dfrac{d \rho(\Psi)}{d \Psi} = \int_0^\Psi d \mathcal E \dfrac{f(\mathcal E)}{\sqrt{\Psi - \mathcal E}}.
+$$
+
+This is an Abel integral equation (btw I don't have any idea of what it means), and it can be inverted to
+
+$$
+f(\mathcal E) = \dfrac{1}{\sqrt{8} \pi^2} \dfrac{d}{d \mathcal E} \int_0^\mathcal{E} d \Psi \ \dfrac{1}{\sqrt{\mathcal E - \Psi}} \dfrac{d\rho}{d \Psi}.
+$$
+
+This is the well-called **Eddington inversion formula**. Is not trivial to evaluate this thing for any density profile, but for the Plummer it is. We get:
 
 $$
 f(\vec x, \vec v) = \dfrac{24 \sqrt{2}}{7 \pi^3} \dfrac{b^2}{G^5 M^4} (-E(\vec x, \vec v))^{7/2} \equiv f(E).
@@ -91,7 +138,7 @@ $$
 p(v | r) \propto v^2 \left(-\dfrac{v^2}{2} - \Phi(r)\right)^{7/2}.
 $$
 
-Let's suposse that we don't want particles with a velocity bigger than the escape velocity $v_{esc}(r) = \sqrt{- 2 \Phi(r)}$. Defining $q := v/v_{esc} \in [0,1]$, we can rewrite the probability:
+Let's suppose that we don't want particles with a velocity bigger than the escape velocity $v_{esc}(r) = \sqrt{- 2 \Phi(r)}$. Defining $q := v/v_{esc} \in [0,1]$, we can rewrite the probability:
 
 $$
 p(v | r) \propto q^2 (1 - q^2)^{7/2} =: g(q).
@@ -103,19 +150,70 @@ To generate a velocity given $r$, we need to use rejection (von Neumann). First,
 2. Generate $y = g(q_{max}) \cdot y_0$, with $y_0 \sim U[0,1]$.
 3. If $y \leq g(q)$, we accept and define $v = q \ v_{esc}$. If not, go to (1).
 
-We can expect some properties of the generated initial values. First, the potential energy $V$ can be calculated with:
+> Very nice!
+
+### Spherical Jeans equation and the equilibrium
+
+Anyway, we can do some *maracutaia* to write the collisionless Boltzmann equation in spherical coordinates, multiply it by the radial momentum, integrate it over the 3-dimensional momentum and vanishes some terms basing on the Jeans Theorem. What we got is the **Spherical Jeans Equation**
+
+$$
+\dfrac{d(\rho \sigma_r^2)}{dr} + \dfrac{2 \beta \rho \sigma_r^2}{r} = - \rho \dfrac{d \Phi}{dr},
+$$
+
+where $\sigma_r$ is the mean radial velocity and $\beta$ is the orbital anisotropy measure, given by:
+
+$$
+\beta = 1 - \dfrac{\sigma_\theta^2 + \sigma_\varphi^2}{2 \sigma_r^2}.
+$$
+
+Note: if a system is isotropic, $\sigma_r = \sigma_\theta = \sigma_\varphi$, therefore $\beta = 0$ and the Jeans Equation reduces to an ODE:
+
+$$
+\dfrac{d (\rho \sigma_r^2)}{dr} = - \rho \dfrac{d \Phi}{dr}.
+$$
+
+Again, using the monotonicit of the potential $\Phi$, it's reasonable to suppose $\Phi(\infty) = 0$. With this, we can multiply both sides of the ODE by $4 \pi r^3$ (*why not?*) and integrate over $r$:
+
+$$
+\int_0^\infty 4 \pi r^3 \dfrac{d (\nu \sigma_r^2)}{dr} dr = - \int_0^\infty 4 \pi r^3 \rho \dfrac{d \Phi}{dr} dr.
+$$
+
+With integration by parts and some definitions, we can get for the left side:
+
+$$
+\int_0^\infty 4 \pi r^3 \dfrac{d (\nu \sigma_r^2)}{dr} dr = - 12 \pi \int_0^\infty r^2 \rho(r) \sigma_r^2 dr = - 2 T,
+$$
+
+the kinect energy!
+
+For the right side we use that:
+
+$$
+\dfrac{d\Phi}{dr} = \dfrac{G M(\lt r)}{r^2}.
+$$
+
+We get:
+
+$$
+- 4 \pi \int_0^\infty r^3   \rho(r) \dfrac{d \Phi}{dr} dr = - 4 \pi G \int_0^\infty r \rho (r) M(\lt r) dr,
+$$
+
+but $M(\lt r) = - r \Phi(r) / G$, then:
+
+$$
+= 4 \pi \int_0^\infty r^2 \rho(r) \Phi(r) dr
+= \int \rho(\vec x) \Phi(\vec x) d^3 \vec x,
+$$
+
+and this is exactly the potential energy $V$ of the system!
+
+Therefore, what we got is just the *virial theorem*: $2 T = -V$. This means that when we generate initial values using all this thing and suppose isotropic velocities, these values are in initial equilibrium (or at least near the equilibrium).
+
+For the Plummer profile, we can evaluate either explicitly:
 
 $$
 V = \dfrac{1}{2} \int \rho(\vec x) \Phi(\vec x) d^3x = 2 \pi \int_0^\infty \rho(r) \Phi(r) r^2 dr = - \dfrac{3 \pi}{32} \dfrac{G M^2}{b}.
 $$
-
-As long as the function $f$ became from the Boltzmann Equation, we can expect the values to be virialized/in equilibrium:
-
-$$
-Q = - \dfrac{2 T}{V} = 1,
-$$
-
-where $T$ is the kinect energy. This means that
 
 $$
 T = \dfrac{3 \pi}{64}\dfrac{G M^2}{b}
