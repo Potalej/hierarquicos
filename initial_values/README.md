@@ -195,7 +195,7 @@ $$
 We get:
 
 $$
-- 4 \pi \int_0^\infty r^3   \rho(r) \dfrac{d \Phi}{dr} dr = - 4 \pi G \int_0^\infty r \rho (r) M(\lt r) dr,
+-4 \pi \int_0^\infty r^3   \rho(r) \dfrac{d \Phi}{dr} dr = - 4 \pi G \int_0^\infty r \rho (r) M(\lt r) dr,
 $$
 
 but $M(\lt r) = - r \Phi(r) / G$, then:
