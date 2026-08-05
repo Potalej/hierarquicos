@@ -7,7 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
-data = np.loadtxt('fortran/out/forces_time.txt')
+# data = np.loadtxt('fortran/out/forces_time.txt')
+data = np.loadtxt('fortran/out/morton_forces_time.txt')
 thetas = data[:,1]
 thetas_uniques = np.unique(thetas)
 grouped = {}
@@ -21,6 +22,8 @@ for theta in thetas_uniques:
     Ns = grouped[theta][:,0]
     times = grouped[theta][:,1]
     error = grouped[theta][:,2]
+
+    if abs(theta) < 1e-8: theta = 0.0
 
     if theta == -1.0:
         axs[0].scatter(Ns, times, c='black', label="Dir.", zorder=100, marker='+')
@@ -39,6 +42,8 @@ for theta in thetas_uniques:
 axs[0].set_title("Time")
 axs[0].set_ylabel("Time (s)")
 axs[0].set_xlabel(r"$N$")
+axs[0].set_yscale('log')
+axs[0].set_ylim(1e-5, 1.0)
 axs[0].legend()
 
 axs[1].set_title("Error")
@@ -48,4 +53,4 @@ axs[1].set_yscale('log')
 axs[1].legend()
 
 plt.tight_layout()
-plt.savefig("img/f_forces_time_and_error.png")
+plt.savefig("img/morton_f_forces_time_and_error.png")

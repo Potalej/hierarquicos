@@ -1,48 +1,70 @@
+! ************************************************************
+!! Octree (Barnes-Hut)
+!
+!> Objectives
+!  This module generates an octree based in the positions of the
+!  particles and evaluates the forces using the Barnes-Hut 
+!  approximation with a quadrupole expansion.
+!
+!> Modified
+!  2026.08.03
+!
+!> Created
+!  2026.06.15
+!
+!> Author
+!  oap
+!
 MODULE octree_mod
-IMPLICIT NONE
-PRIVATE
-PUBLIC OctreeType
+    IMPLICIT NONE
+    PRIVATE
+    PUBLIC OctreeType
 
-TYPE :: OctreeType
-    ! max depth of the tree
-    INTEGER :: max_depth = 32
-    ! amplificator of the size of the quadtree-root
-    REAL(8) :: side_amplificator = 1.2d0
+    INTEGER, PARAMETER :: pf  = SELECTED_REAL_KIND(15, 307)
 
-    ! to save_txt
-    INTEGER :: save_txt
+    TYPE :: OctreeType
+        ! max depth of the tree
+        INTEGER :: max_depth = 32
+        ! amplificator of the size of the quadtree-root
+        REAL(pf) :: side_amplificator = 1.2_pf
+        ! multipole
+        INTEGER :: multipole
 
-    ! masses, positions and number of bodies (N)
-    REAL(8), ALLOCATABLE :: m(:), x(:), y(:), z(:)
-    INTEGER :: N
+        ! to save_txt
+        INTEGER :: save_txt
 
-    ! nodes
-    INTEGER :: number_of_nodes = 0
-    INTEGER :: max_number_of_nodes
-    REAL(8), ALLOCATABLE :: ns_cx(:), ns_cy(:), ns_cz(:) ! centers
-    REAL(8), ALLOCATABLE :: ns_halfside(:), ns_L2(:)
-    REAL(8), ALLOCATABLE :: ns_mass(:), ns_qcm_x(:), ns_qcm_y(:), ns_qcm_z(:)
-    REAL(8), ALLOCATABLE :: ns_quad(:,:)
-    INTEGER, ALLOCATABLE :: ns_particle(:)
-    INTEGER, ALLOCATABLE :: ns_type(:)
-    INTEGER, ALLOCATABLE :: ns_child(:,:)
-    INTEGER, ALLOCATABLE :: ns_depth(:)
+        ! masses, positions and number of bodies (N)
+        REAL(pf), ALLOCATABLE :: m(:), x(:), y(:), z(:)
+        INTEGER :: N
+
+        ! nodes
+        INTEGER :: number_of_nodes = 0
+        INTEGER :: max_number_of_nodes
+        REAL(pf), ALLOCATABLE :: ns_cx(:), ns_cy(:), ns_cz(:) ! centers
+        REAL(pf), ALLOCATABLE :: ns_halfside(:), ns_L2(:)
+        REAL(pf), ALLOCATABLE :: ns_mass(:), ns_qcm_x(:), ns_qcm_y(:), ns_qcm_z(:)
+        REAL(pf), ALLOCATABLE :: ns_quad(:,:)
+        INTEGER, ALLOCATABLE :: ns_particle(:)
+        INTEGER, ALLOCATABLE :: ns_type(:)
+        INTEGER, ALLOCATABLE :: ns_child(:,:)
+        INTEGER, ALLOCATABLE :: ns_depth(:)
+    CONTAINS
+        PROCEDURE :: init
+        PROCEDURE :: allocate_nodes, add_node, allocate_subnode, add_to_subnode, add
+        PROCEDURE :: forces => evaluate_forces_over_p
+        PROCEDURE :: evaluate_quadrupole, evaluate_quadrupole_aprox
+    END TYPE
+
 CONTAINS
-    PROCEDURE :: init
-    PROCEDURE :: allocate_nodes, add_node, allocate_subnode, add_to_subnode, add
-    PROCEDURE :: forces => evaluate_forces_over_p
-    PROCEDURE :: evaluate_quad, evaluate_quad_aprox
-END TYPE
 
-CONTAINS
-
-SUBROUTINE init (self, m, x, y, z, save_txt)
+SUBROUTINE init (self, m, x, y, z, use_multipole, save_txt)
 ! this subroutine inits the tree by allocating the global vectors and adding each particle
-! in a node. if its the case it saves the root information too.
+! in a node. if its the case it saves the root in1formation too.
     CLASS(OctreeType), INTENT(INOUT) :: self
-    REAL(8), INTENT(IN) :: m(:), x(:), y(:), z(:)
+    REAL(pf), INTENT(IN) :: m(:), x(:), y(:), z(:)
+    LOGICAL, INTENT(IN) :: use_multipole
     INTEGER, OPTIONAL :: save_txt
-    REAL(8) :: infos_root(4)
+    REAL(pf) :: infos_root(4)
     INTEGER :: p, idx_root
 
     ! saving particles information
@@ -62,18 +84,12 @@ SUBROUTINE init (self, m, x, y, z, save_txt)
     CALL self % allocate_nodes()
     
     infos_root = node_size_center(x, y, z)
-    CALL self % add_node(infos_root(1), infos_root(2), infos_root(3), &
-            self%side_amplificator*infos_root(4), 0, idx_root)
+    CALL self % add_node(infos_root(1), infos_root(2), infos_root(3), 1.2*infos_root(4), 0, idx_root)
 
     ! if wants to save_txt
     self % save_txt = -1
     IF (PRESENT(save_txt)) THEN
         self % save_txt = save_txt
-        WRITE (self % save_txt, *) self % N
-        WRITE (self % save_txt, *) m
-        WRITE (self % save_txt, *) x
-        WRITE (self % save_txt, *) y
-        WRITE (self % save_txt, *) z
         WRITE (self % save_txt, *) self%ns_cx(1), self%ns_cy(1), self%ns_cz(1), self%ns_halfside(1)
     ENDIF
 
@@ -81,6 +97,15 @@ SUBROUTINE init (self, m, x, y, z, save_txt)
     DO p = 1, self % N
         CALL self % add(idx_root, p)
     END DO
+
+    ! if wants to use multipole
+    IF (use_multipole) THEN
+        ! use quadrupole only for now
+        CALL self % evaluate_quadrupole()
+        self % multipole = 4
+    ELSE
+        self % multipole = 1
+    ENDIF
 END SUBROUTINE
 
 SUBROUTINE allocate_nodes (self)
@@ -90,7 +115,7 @@ SUBROUTINE allocate_nodes (self)
 ! without lose the old information.
 ! @calledby init, add_node
     CLASS(OctreeType), INTENT(INOUT) :: self
-    REAL(8), ALLOCATABLE :: temp_real(:)
+    REAL(pf), ALLOCATABLE :: temp_real(:)
     INTEGER, ALLOCATABLE :: temp_int(:), temp_int_2(:,:)
     INTEGER :: old_size, new_size
 
@@ -185,7 +210,7 @@ SUBROUTINE allocate_nodes (self)
 
         ! quadrupole
         ALLOCATE(self % ns_quad(self % max_number_of_nodes, 6))
-        self % ns_quad = 0.0d0
+        self % ns_quad = 0.0_pf
     ENDIF
 END SUBROUTINE
 
@@ -193,9 +218,9 @@ FUNCTION node_size_center (x, y, z) RESULT (infos)
 ! this subroutine gets the node size and center (in space xyz) based in the position
 ! vectors, giving the minimal square that contains every body.
 ! @calledby init
-    REAL(8), INTENT(IN) :: x(:), y(:), z(:)
-    REAL(8) :: xmin, xmax, ymin, ymax, zmin, zmax
-    REAL(8) :: infos(4)
+    REAL(pf), INTENT(IN) :: x(:), y(:), z(:)
+    REAL(pf) :: xmin, xmax, ymin, ymax, zmin, zmax
+    REAL(pf) :: infos(4)
 
     xmin = MINVAL(x)
     xmax = MAXVAL(x)
@@ -204,9 +229,9 @@ FUNCTION node_size_center (x, y, z) RESULT (infos)
     zmin = MINVAL(z)
     zmax = MAXVAL(z)
 
-    infos(1) = 0.5d0 * (xmin + xmax)
-    infos(2) = 0.5d0 * (ymin + ymax)
-    infos(3) = 0.5d0 * (zmin + zmax)
+    infos(1) = 0.5_pf * (xmin + xmax)
+    infos(2) = 0.5_pf * (ymin + ymax)
+    infos(3) = 0.5_pf * (zmin + zmax)
     infos(4) = MAXVAL((/ xmax - xmin, ymax - ymin, zmax - zmin /))
 END FUNCTION
 
@@ -215,7 +240,7 @@ SUBROUTINE add_node (self, cx, cy, cz, side, depth, idx)
 ! global node state vectors with twice the original size.
 ! @calledby init, allocate_subnode
     CLASS(OctreeType), INTENT(INOUT) :: self
-    REAL(8), INTENT(IN) :: cx, cy, cz, side
+    REAL(pf), INTENT(IN) :: cx, cy, cz, side
     INTEGER, INTENT(IN) :: depth
     INTEGER, INTENT(INOUT) :: idx
 
@@ -235,16 +260,16 @@ SUBROUTINE add_node (self, cx, cy, cz, side, depth, idx)
     self % ns_cx(idx) = cx
     self % ns_cy(idx) = cy
     self % ns_cz(idx) = cz
-    self % ns_halfside(idx) = side / 2.0d0
+    self % ns_halfside(idx) = side / 2.0_pf
     self % ns_L2(idx) = side * side
-    self % ns_mass(idx) = 0.0d0
-    self % ns_qcm_x(idx) = 0.0d0
-    self % ns_qcm_y(idx) = 0.0d0
-    self % ns_qcm_z(idx) = 0.0d0
+    self % ns_mass(idx) = 0.0_pf
+    self % ns_qcm_x(idx) = 0.0_pf
+    self % ns_qcm_y(idx) = 0.0_pf
+    self % ns_qcm_z(idx) = 0.0_pf
     self % ns_particle(idx) = -1
     
     ! quadrupole
-    self % ns_quad(idx,:) = 0.0d0
+    self % ns_quad(idx,:) = 0.0_pf
 END SUBROUTINE
 
 SUBROUTINE allocate_subnode (self, node_idx, index)
@@ -255,11 +280,11 @@ SUBROUTINE allocate_subnode (self, node_idx, index)
     INTEGER, INTENT(IN) :: node_idx
     INTEGER, INTENT(IN) :: index
     INTEGER :: subnode_idx, d
-    REAL(8) :: h, h_half, cx, cy, cz, cx_sub, cy_sub, cz_sub
+    REAL(pf) :: h, h_half, cx, cy, cz, cx_sub, cy_sub, cz_sub
     INTEGER :: sign_x, sign_y, sign_z
     
     h = self % ns_halfside(node_idx)
-    h_half = h / 2.0d0
+    h_half = h / 2.0_pf
     cx = self % ns_cx(node_idx)
     cy = self % ns_cy(node_idx)
     cz = self % ns_cz(node_idx)
@@ -293,7 +318,7 @@ SUBROUTINE add_to_subnode (self, node_idx, p)
 
     INTEGER :: ix, iy, iz
 
-    ix = MERGE(1,0,self % x(p) > self % ns_cx(node_idx))
+    ix = MERGE(1,0,self % x(p) >= self % ns_cx(node_idx))
     iy = MERGE(1,0,self % y(p) < self % ns_cy(node_idx))
     iz = MERGE(1,0,self % z(p) < self % ns_cz(node_idx))
 
@@ -321,7 +346,7 @@ SUBROUTINE add (self, node_idx, p)
     INTEGER, INTENT(IN) :: node_idx
     INTEGER, INTENT(IN) :: p ! particle index
     INTEGER :: old_p
-    REAL(8) :: pm, px, py, pz, old_mass
+    REAL(pf) :: pm, px, py, pz, old_mass
     
     ! get particle information
     pm = self % m(p)
@@ -370,17 +395,17 @@ SUBROUTINE add (self, node_idx, p)
     CALL self % add_to_subnode(node_idx, p)
 END SUBROUTINE
 
-SUBROUTINE evaluate_quad_aprox (self, par_node_idx)
+SUBROUTINE evaluate_quadrupole_aprox (self, par_node_idx)
     CLASS(OctreeType), INTENT(INOUT) :: self
     INTEGER, OPTIONAL :: par_node_idx
     INTEGER :: node_idx, child_idx, i
-    REAL(8) :: pm, px, py, pz
-    REAL(8) :: dxi, dyi, dzi ! quadrupole
+    REAL(pf) :: pm, px, py, pz
+    REAL(pf) :: dxi, dyi, dzi ! quadrupole
 
     node_idx = 1
     IF (PRESENT(par_node_idx)) node_idx = par_node_idx
 
-    IF (node_idx == 1) self % ns_quad = 0.0d0
+    IF (node_idx == 1) self % ns_quad = 0.0_pf
 
     DO i = 1, 8
         child_idx = self % ns_child(node_idx, i)
@@ -389,7 +414,7 @@ SUBROUTINE evaluate_quad_aprox (self, par_node_idx)
 
         ! if its a node, evaluate the node
         IF (self % ns_type(child_idx) == 2) THEN
-            CALL self % evaluate_quad_aprox(child_idx)
+            CALL self % evaluate_quadrupole_aprox(child_idx)
         ENDIF
 
         ! get information
@@ -413,14 +438,14 @@ SUBROUTINE evaluate_quad_aprox (self, par_node_idx)
 END SUBROUTINE
 
 
-SUBROUTINE evaluate_quad (self)
+SUBROUTINE evaluate_quadrupole (self)
     CLASS(OctreeType), INTENT(INOUT) :: self
     INTEGER :: i, child_idx, p, node_idx
-    REAL(8) :: pm, px, py, pz
-    REAL(8) :: dxi, dyi, dzi ! quadrupole
+    REAL(pf) :: pm, px, py, pz
+    REAL(pf) :: dxi, dyi, dzi ! quadrupole
     INTEGER :: stack(self % number_of_nodes), top
 
-    self % ns_quad = 0.0d0
+    self % ns_quad = 0.0_pf
 
     !$OMP PARALLEL SHARED(self) PRIVATE(node_idx, top, stack, child_idx, p, pm, px, py, pz, dxi, dyi, dzi)
     !$OMP DO
@@ -442,7 +467,7 @@ SUBROUTINE evaluate_quad (self)
             top = top - 1
 
             ! If its a particle, udpate the quadrupole vector
-            IF (self % ns_type(p) == 1) THEN
+            IF (self % ns_type(p) == 1 .OR. self % ns_depth(p) - self % ns_depth(node_idx) >= 4) THEN
                 ! get information
                 pm = self % ns_mass(p)
                 px = self % ns_qcm_x(p)
@@ -478,36 +503,36 @@ SUBROUTINE evaluate_quad (self)
     !$OMP END PARALLEL
 END SUBROUTINE
 
-FUNCTION evaluate_forces_over_p (self, p, par_theta2, par_G, par_eps) RESULT (forces)
+FUNCTION evaluate_forces_over_p (self, p, par_theta2, par_G, par_eps2) RESULT (forces)
 ! given a particle and the parameters, this evaluates the forces over the particle
 ! using the Barnes-Hut criterion. it uses the depth first traversal (DFS) algorithm 
 ! to evaluate the forces in the tree.
     CLASS(OctreeType), INTENT(INOUT) :: self
     INTEGER, INTENT(IN) :: p ! particle index
-    REAL(8), INTENT(IN), OPTIONAL :: par_theta2, par_G, par_eps ! parameters
-    REAL(8) :: eps, theta2, G
+    REAL(pf), INTENT(IN), OPTIONAL :: par_theta2, par_G, par_eps2 ! parameters
+    REAL(pf) :: eps2, theta2, G
 
-    REAL(8) :: pm, px, py, pz
-    REAL(8) :: forces(3)
-    REAL(8) :: dx, dy, dz, dist2, L2, f
+    REAL(pf) :: pm, px, py, pz
+    REAL(pf) :: forces(3)
+    REAL(pf) :: dx, dy, dz, dist2, L2, f
 
     INTEGER :: stack(self % number_of_nodes)
     INTEGER :: top, node_idx, i, child_idx
 
-    REAL(8) :: rinv, invR, invR3, invR5
-    REAL(8) :: Mx, My, Mz
-    REAL(8) :: Qx, Qy, Qz
-    REAL(8) :: mxi2, myi2, mzi2, mxyi, mxzi, myzi
+    REAL(pf) :: rinv, invR, invR3, invR5
+    REAL(pf) :: Mx, My, Mz
+    REAL(pf) :: Qx, Qy, Qz
+    REAL(pf) :: mxi2, myi2, mzi2, mxyi, mxzi, myzi
 
-    REAL(8) :: dx2, dy2, dz2, dxyz, invR2
+    REAL(pf) :: dx2, dy2, dz2, dxyz, invR2
 
     ! default values
-    eps = 0.0d0
-    theta2 = 0.0d0
-    G = 1.0d0
+    eps2 = 0.0_pf
+    theta2 = 0.0_pf
+    G = 1.0_pf
 
     ! replace if present
-    IF (PRESENT(par_eps))    eps = par_eps
+    IF (PRESENT(par_eps2))   eps2 = par_eps2
     IF (PRESENT(par_theta2)) theta2 = par_theta2
     IF (PRESENT(par_G))      G = par_G
 
@@ -518,7 +543,7 @@ FUNCTION evaluate_forces_over_p (self, p, par_theta2, par_G, par_eps) RESULT (fo
     pz = self % z(p)
 
     ! initialize
-    forces = 0.0d0
+    forces = 0.0_pf
     top = 1
     stack(top) = 1
 
@@ -529,7 +554,7 @@ FUNCTION evaluate_forces_over_p (self, p, par_theta2, par_G, par_eps) RESULT (fo
         top = top - 1
 
         ! empty node
-        IF (self % ns_mass(node_idx) == 0.0d0) CYCLE
+        IF (self % ns_mass(node_idx) == 0.0_pf) CYCLE
 
         ! self interaction
         IF (self % ns_type(node_idx) == 1) THEN
@@ -544,17 +569,17 @@ FUNCTION evaluate_forces_over_p (self, p, par_theta2, par_G, par_eps) RESULT (fo
         L2 = self % ns_L2(node_idx)
 
         ! leaf or bh criterion
-        IF (self % ns_type(node_idx) == 1 .OR. L2 < theta2 * dist2) THEN
-            IF (self % ns_type(node_idx) == 1) THEN
-                rinv = 1.0d0 / SQRT(dist2 + eps*eps)
+        IF (self % ns_type(node_idx) == 1 .OR. L2 <= theta2 * dist2) THEN
+            IF (self % ns_type(node_idx) == 1 .OR. self % multipole == 1) THEN
+                rinv = 1.0_pf / SQRT(dist2 + eps2)
                 rinv = rinv * rinv * rinv
                 f = G * pm * self % ns_mass(node_idx) * rinv
                 forces(1) = forces(1) + f * dx
                 forces(2) = forces(2) + f * dy
                 forces(3) = forces(3) + f * dz
             ELSE
-                invR = 1.0d0 / SQRT(dist2 + eps*eps)
-                invR2 = 1.0d0 / (dist2 + eps*eps)
+                invR = 1.0_pf / SQRT(dist2 + eps2)
+                invR2 = 1.0_pf / (dist2 + eps2)
                 invR3 = invR * invR2
                 invR5 = invR3 * invR * invR
 
@@ -569,14 +594,14 @@ FUNCTION evaluate_forces_over_p (self, p, par_theta2, par_G, par_eps) RESULT (fo
                 mxzi = self % ns_quad(node_idx, 5)
                 myzi = self % ns_quad(node_idx, 6)
 
-                dx2  = 15.0d0 * dx * dx * invR2 - 3.0d0
-                dy2  = 15.0d0 * dy * dy * invR2 - 3.0d0
-                dz2  = 15.0d0 * dz * dz * invR2 - 3.0d0
-                dxyz = 15.0d0 * dx * dy * dz * invR2
+                dx2  = 15.0_pf * dx * dx * invR2 - 3.0_pf
+                dy2  = 15.0_pf * dy * dy * invR2 - 3.0_pf
+                dz2  = 15.0_pf * dz * dz * invR2 - 3.0_pf
+                dxyz = 15.0_pf * dx * dy * dz * invR2
                 
-                Qx = (mxi2 * (dx2 - 6.0d0) + myi2 * dy2 + mzi2 * dz2) * 0.5d0 * dx
-                Qy = (myi2 * (dy2 - 6.0d0) + mzi2 * dz2 + mxi2 * dx2) * 0.5d0 * dy
-                Qz = (mzi2 * (dz2 - 6.0d0) + mxi2 * dx2 + myi2 * dy2) * 0.5d0 * dz
+                Qx = (mxi2 * (dx2 - 6.0_pf) + myi2 * dy2 + mzi2 * dz2) * 0.5_pf * dx
+                Qy = (myi2 * (dy2 - 6.0_pf) + mzi2 * dz2 + mxi2 * dx2) * 0.5_pf * dy
+                Qz = (mzi2 * (dz2 - 6.0_pf) + mxi2 * dx2 + myi2 * dy2) * 0.5_pf * dz
 
                 Qx = Qx + mxyi * dy * dx2 + mxzi * dz * dx2 + myzi * dxyz
                 Qy = Qy + myzi * dz * dy2 + mxyi * dx * dy2 + mxzi * dxyz

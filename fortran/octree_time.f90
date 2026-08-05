@@ -10,13 +10,18 @@ PROGRAM octree_time
     USE omp_lib
     IMPLICIT NONE
 
+    INTEGER, PARAMETER :: pf  = SELECTED_REAL_KIND(15, 307)
     INTEGER :: file
 
     file = 45
 
-    OPEN(file, file = "out/octree_time.txt", status="replace")
-    CALL test_tree_time(100, 20000, 100, 10, file)
-    ! CALL test_tree_time_morton(1000, 20000, 100, 1, file)
+    OPEN(file, file = "./out/octree_time_morton.txt", status="replace")
+    CALL test_tree_time_morton(100, 10000, 50, 10, file)
+    CLOSE(file)
+
+    OPEN(file, file = "./out/octree_time.txt", status="replace")
+    CALL test_tree_time(100, 10000, 50, 10, file)
+    CLOSE(file)
 CONTAINS
 
 SUBROUTINE generate_initial_values (N, m, x, y, z)
@@ -39,7 +44,7 @@ SUBROUTINE test_tree_time (Nmin, Nmax, Nstep, tests, file)
     INTEGER, INTENT(IN) :: Nmin, Nmax, Nstep, tests, file
     INTEGER :: N, i
     REAL(8), ALLOCATABLE :: m(:), x(:), y(:), z(:)
-    REAL :: time_start, time_finish, total
+    REAL(16) :: time_start, time_finish, total
     CLASS(OctreeType), ALLOCATABLE :: tree
 
     DO N = Nmin, Nmax, Nstep
@@ -51,16 +56,16 @@ SUBROUTINE test_tree_time (Nmin, Nmax, Nstep, tests, file)
             
             CALL generate_initial_values(N, m, x, y, z)
 
-            CALL CPU_TIME(time_start)
+            time_start = omp_get_wtime()
 
             ! now test the tree
             ALLOCATE(tree)
-            CALL tree % init(m, x, y, z)
-            CALL CPU_TIME(time_finish)
+            CALL tree % init(m, x, y, z, .TRUE.)
+            time_finish = omp_get_wtime()
 
             total = time_finish - time_start
 
-            WRITE(file, *) N, total
+            IF (i > 1) WRITE(file, *) N, total
             print *, N, total
 
             DEALLOCATE(tree)
@@ -74,15 +79,13 @@ SUBROUTINE test_tree_time_morton (Nmin, Nmax, Nstep, tests, file)
     INTEGER, INTENT(IN) :: Nmin, Nmax, Nstep, tests, file
     INTEGER :: N, i
     REAL(8), ALLOCATABLE :: m(:), x(:), y(:), z(:)
-    REAL :: time_start, time_finish, total
-    TYPE(node_type), ALLOCATABLE :: nodes(:)
-    INTEGER :: nnodes
+    REAL(16) :: time_start, time_finish, total
     REAL(8), ALLOCATABLE :: qs(:,:)
     INTEGER :: L
 
     TYPE(morton_tree_type), ALLOCATABLE :: morton_tree
 
-    L = 0
+    L = 7
 
     DO N = Nmin, Nmax, Nstep
         DO i = 1, tests
@@ -90,25 +93,28 @@ SUBROUTINE test_tree_time_morton (Nmin, Nmax, Nstep, tests, file)
             ALLOCATE(x(N))
             ALLOCATE(y(N))
             ALLOCATE(z(N))
-            ALLOCATE(qs(N,3))
+            ALLOCATE(qs(3,N))
             
             CALL generate_initial_values(N, m, x, y, z)
-            qs(:,1) = x
-            qs(:,2) = y
-            qs(:,3) = z
+            qs(1,:) = x
+            qs(2,:) = y
+            qs(3,:) = z
 
-            CALL CPU_TIME(time_start)
+            time_start = omp_get_wtime()
 
             ! now test the tree
             ALLOCATE(morton_tree)
-            CALL morton_tree % init(N, m, qs, L, 1.2d0, .true.)
+            CALL morton_tree % init(N, m, qs, L, 1.2d0, .TRUE.)
 
-            CALL CPU_TIME(time_finish)
+            time_finish = omp_get_wtime()
 
             total = time_finish - time_start
 
-            WRITE(file, *) N, total
+            IF (i > 1) WRITE(file, *) N, total
             PRINT *, N, total
+
+            print *, morton_tree % time_generate_tree
+            print *, morton_tree % time_eval_quadrupole
 
             DEALLOCATE(m)
             DEALLOCATE(x, y, z, qs)

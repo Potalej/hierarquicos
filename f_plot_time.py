@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
-data = np.loadtxt('fortran/out/tree_time.txt')
+data = np.loadtxt('fortran/out/octree_time.txt')
 Ns = data[:,0]
 times = data[:,1]
 

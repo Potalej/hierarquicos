@@ -1,13 +1,34 @@
+! ************************************************************
+!! Octree for Barnes-Hut using Morton (Z) ordering
+!
+!> Objectives
+!  This module generates an octree based in the positions by
+!  normalizing all the system into the cube [0,2^L-1]^3 and 
+!  generating a Morton key for each body. The forces are
+!  evaluated using the Barnes-Hut method with a quadrupole
+!  expansion.
+!
+!> Modified
+!  2026.08.03
+!
+!> Created
+!  2026.08.03
+!
+!> Author
+!  oap
+!
 MODULE morton_octree_mod
     USE omp_lib
     IMPLICIT NONE
     PRIVATE
-    PUBLIC node_type, eval_forces, evaluate_quadrupoles, generate_nodes, barnes_hut, morton_tree_type
+    PUBLIC morton_tree_type
+
+    INTEGER, PARAMETER :: pf  = SELECTED_REAL_KIND(15, 307)
 
     TYPE :: node_type
         INTEGER(8) :: prefix ! hash prefix
         INTEGER    :: level  ! 0, ..., L, where 0 is the root
-        REAL(8)    :: size2  ! squared length of the cube
+        REAL(pf)    :: size2  ! squared length of the cube
         
         INTEGER :: first ! first particle index (ordered)
         INTEGER :: last  ! last particle index (ordered)
@@ -16,10 +37,10 @@ MODULE morton_octree_mod
         INTEGER :: nchild, child(8) ! children
         INTEGER :: next             ! next node index
 
-        REAL(8) :: mass   ! mass
-        REAL(8) :: qcm(3) ! center of mass
+        REAL(pf) :: mass   ! mass
+        REAL(pf) :: qcm(3) ! center of mass
         
-        REAL(8) :: quad(6) ! quadrupole expansion
+        REAL(pf) :: quad(6) ! quadrupole expansion
     END TYPE
 
     TYPE :: morton_tree_type
@@ -28,21 +49,21 @@ MODULE morton_octree_mod
         INTEGER :: nnodes
         
         INTEGER, ALLOCATABLE :: perm(:)
-        REAL(8), ALLOCATABLE :: masses(:), positions(:,:)
-        REAL(8), ALLOCATABLE :: perm_masses(:), perm_positions(:,:)
+        REAL(pf), ALLOCATABLE :: masses(:), positions(:,:)
+        REAL(pf), ALLOCATABLE :: perm_masses(:), perm_positions(:,:)
         INTEGER, ALLOCATABLE :: level_begin(:), level_end(:)
-        REAL(8) :: system_size_amplificator
+        REAL(pf) :: system_size_amplificator
 
         INTEGER :: depth
         LOGICAL :: use_quadrupole
 
-        REAL(8) :: time_generate_tree, time_eval_quadrupole
+        REAL(pf) :: time_generate_tree, time_eval_quadrupole
 
         CONTAINS
             PROCEDURE :: init => init_morton_tree_type
             PROCEDURE :: forces_over_p => forces_individual_morton_tree_type
-            PROCEDURE :: forces => forces_seq_morton_tree_type
-            PROCEDURE :: forces_par => forces_par_morton_tree_type
+            PROCEDURE :: forces_seq
+            PROCEDURE :: forces_par
     END TYPE
 
 CONTAINS
@@ -52,15 +73,15 @@ CONTAINS
 SUBROUTINE init_morton_tree_type (self, N, ms, qs, L, ssa, use_quadrupole)
     CLASS(morton_tree_type), INTENT(INOUT) :: self
     INTEGER, INTENT(IN) :: N
-    REAL(8), INTENT(IN) :: ms(:), qs(:,:)
+    REAL(pf), INTENT(IN) :: ms(:), qs(:,:)
     INTEGER, INTENT(IN) :: L
-    REAL(8), INTENT(IN) :: ssa ! system size amplificator
+    REAL(pf), INTENT(IN) :: ssa ! system size amplificator
     LOGICAL, INTENT(IN) :: use_quadrupole
-    REAL(8) :: t0
+    REAL(pf) :: t0
 
     self % N = N
     ALLOCATE(self % masses(N))
-    ALLOCATE(self % positions(N,3))
+    ALLOCATE(self % positions(3,N))
     self % masses = ms
     self % positions = qs
     self % system_size_amplificator = ssa
@@ -68,7 +89,7 @@ SUBROUTINE init_morton_tree_type (self, N, ms, qs, L, ssa, use_quadrupole)
 
     ALLOCATE(self % perm(N))
     ALLOCATE(self % perm_masses(N))
-    ALLOCATE(self % perm_positions(N,3))
+    ALLOCATE(self % perm_positions(3,N))
 
     self % use_quadrupole = use_quadrupole
 
@@ -93,10 +114,10 @@ END SUBROUTINE
 FUNCTION forces_individual_morton_tree_type (self, p, G, eps2, theta2, mult_par) RESULT(forces)
     CLASS(morton_tree_type), INTENT(INOUT) :: self
     INTEGER, INTENT(IN) :: p
-    REAL(8), INTENT(IN) :: G, eps2, theta2
+    REAL(pf), INTENT(IN) :: G, eps2, theta2
     LOGICAL, INTENT(IN), OPTIONAL :: mult_par
 
-    REAL(8) :: forces(3)
+    REAL(pf) :: forces(3)
     LOGICAL :: mult
 
     mult = self % use_quadrupole
@@ -107,12 +128,12 @@ FUNCTION forces_individual_morton_tree_type (self, p, G, eps2, theta2, mult_par)
 END FUNCTION
 
 ! it evaluates the forces over all particles (sequential)
-FUNCTION forces_seq_morton_tree_type (self, G, eps2, theta2, mult_par) RESULT(forces)
+FUNCTION forces_seq (self, G, eps2, theta2, mult_par) RESULT(forces)
     CLASS(morton_tree_type), INTENT(INOUT) :: self
-    REAL(8), INTENT(IN) :: G, eps2, theta2
+    REAL(pf), INTENT(IN) :: G, eps2, theta2
     LOGICAL, INTENT(IN), OPTIONAL :: mult_par
 
-    REAL(8) :: forces(self%N,3)
+    REAL(pf) :: forces(3,self%N)
     LOGICAL :: mult
     INTEGER :: p
 
@@ -120,51 +141,51 @@ FUNCTION forces_seq_morton_tree_type (self, G, eps2, theta2, mult_par) RESULT(fo
     IF (PRESENT(mult_par)) mult = mult_par
 
     DO p = 1, self % N
-        forces(self % perm(p),:) = barnes_hut(p, self % nodes, self % perm_masses, self % perm_positions, &
+        forces(:,self % perm(p)) = barnes_hut(p, self % nodes, self % perm_masses, self % perm_positions, &
                             theta2, G, eps2, mult)
     END DO
 END FUNCTION
 
 ! it evaluates the forces over all particles (parallel)
-FUNCTION forces_par_morton_tree_type (self, G, eps2, theta2, mult_par, num_threads_par) RESULT(forces)
+FUNCTION forces_par (self, G, eps2, theta2, mult_par, num_threads) RESULT(forces)
     CLASS(morton_tree_type), INTENT(INOUT) :: self
-    REAL(8), INTENT(IN) :: G, eps2, theta2
+    REAL(pf), INTENT(IN) :: G, eps2, theta2
     LOGICAL, INTENT(IN), OPTIONAL :: mult_par
-    INTEGER, INTENT(IN), OPTIONAL :: num_threads_par
+    INTEGER, INTENT(IN), OPTIONAL :: num_threads
 
-    REAL(8) :: forces(self%N,3)
+    REAL(pf) :: forces(3,self%N)
     LOGICAL :: mult
     INTEGER :: p
-    INTEGER :: num_threads
 
     mult = self % use_quadrupole
     IF (PRESENT(mult_par)) mult = mult_par
 
-    IF (PRESENT(num_threads_par)) THEN
-        num_threads = num_threads_par
+    IF (PRESENT(num_threads)) THEN
+        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(p) &
+        !$OMP NUM_THREADS(num_threads)
+        DO p = 1, self % N
+            forces(:, self % perm(p)) = barnes_hut(p, self % nodes, self % perm_masses, self % perm_positions, &
+                                theta2, G, eps2, mult)
+        END DO
+        !$OMP END PARALLEL DO
     ELSE
-        !$OMP PARALLEL PRIVATE(num_threads)
-            num_threads = omp_get_num_threads()
-        !$OMP END PARALLEL
+        !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(p)
+        DO p = 1, self % N
+            forces(:, self % perm(p)) = barnes_hut(p, self % nodes, self % perm_masses, self % perm_positions, &
+                                theta2, G, eps2, mult)
+        END DO
+        !$OMP END PARALLEL DO
     ENDIF    
 
-    !$OMP PARALLEL SHARED(forces) PRIVATE(p) NUM_THREADS(num_threads)
-    !$OMP DO SCHEDULE(STATIC)
-    DO p = 1, self % N
-        forces(self % perm(p),:) = barnes_hut(p, self % nodes, self % perm_masses, self % perm_positions, &
-                            theta2, G, eps2, mult)
-    END DO
-    !$OMP END DO
-    !$OMP END PARALLEL
 END FUNCTION
 
 ! GERAL SUBROUTINES
 ! for a given (x,y,z) and depth L, it gives a Morton key
 FUNCTION morton_key (q3, L) RESULT(key)
-    REAL(8), INTENT(IN) :: q3(3)
+    REAL(pf), INTENT(IN) :: q3(3)
     INTEGER, INTENT(IN) :: L
 
-    REAL(8)    :: x, y, z
+    REAL(pf)    :: x, y, z
     INTEGER(8) :: ix, iy, iz
     INTEGER(8) :: xb, yb, zb
     INTEGER(8) :: scale, b, oct
@@ -195,7 +216,7 @@ END FUNCTION
 ! achieve a tree with only one particle for leaf (brute force)
 SUBROUTINE choose_depth (N, qs, L, keys)
     INTEGER, INTENT(IN) :: N
-    REAL(8), INTENT(IN) :: qs(N,3)
+    REAL(pf), INTENT(IN) :: qs(3,N)
     INTEGER,    INTENT(INOUT) :: L       ! depth
     INTEGER(8), INTENT(INOUT) :: keys(N) ! Morton keys with depth L
 
@@ -207,7 +228,7 @@ SUBROUTINE choose_depth (N, qs, L, keys)
 
     search: DO WHILE (.NOT. found)
         DO p = 1, N
-            keys(p) = morton_key(qs(p,:), L)
+            keys(p) = morton_key(qs(:,p), L)
 
             IF (p > 1) THEN
                 not_unique = ANY(keys(1:p-1) == keys(p))
@@ -237,7 +258,7 @@ FUNCTION create_node (level, prefix, first, last, mass, qcm, size) RESULT(node)
     INTEGER,    INTENT(IN) :: level
     INTEGER(8), INTENT(IN) :: prefix
     INTEGER,    INTENT(IN) :: first, last
-    REAL(8),    INTENT(IN) :: mass, qcm(3), size
+    REAL(pf),   INTENT(IN) :: mass, qcm(3), size
     TYPE(node_type) :: node
 
     node % level = level
@@ -250,21 +271,21 @@ FUNCTION create_node (level, prefix, first, last, mass, qcm, size) RESULT(node)
     node % parent = -1
     node % nchild = 0
     node % child = -1
-    node % quad = 0.0d0
+    node % quad = 0.0_pf
 END FUNCTION
 
 ! for a given positions vector q(N,3) it gives the size of the minimum
 ! cube that contains all the particles and its center
 FUNCTION system_size_info (N, q) RESULT(infos)
     INTEGER, INTENT(IN) :: N
-    REAL(8), INTENT(IN) :: q(N,3)
-    REAL(8) :: x(N), y(N), z(N)
-    REAL(8) :: xmin, xmax, ymin, ymax, zmin, zmax
-    REAL(8) :: infos(4)
+    REAL(pf), INTENT(IN) :: q(3,N)
+    REAL(pf) :: x(N), y(N), z(N)
+    REAL(pf) :: xmin, xmax, ymin, ymax, zmin, zmax
+    REAL(pf) :: infos(4)
 
-    x = q(:,1)
-    y = q(:,2)
-    z = q(:,3)
+    x = q(1,:)
+    y = q(2,:)
+    z = q(3,:)
 
     xmin = MINVAL(x)
     xmax = MAXVAL(x)
@@ -273,9 +294,9 @@ FUNCTION system_size_info (N, q) RESULT(infos)
     zmin = MINVAL(z)
     zmax = MAXVAL(z)
 
-    infos(1) = 0.5d0 * (xmin + xmax)
-    infos(2) = 0.5d0 * (ymin + ymax)
-    infos(3) = 0.5d0 * (zmin + zmax)
+    infos(1) = 0.5_pf * (xmin + xmax)
+    infos(2) = 0.5_pf * (ymin + ymax)
+    infos(3) = 0.5_pf * (zmin + zmax)
     infos(4) = MAXVAL((/ xmax - xmin, ymax - ymin, zmax - zmin /))
 END FUNCTION
 
@@ -315,20 +336,20 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
                         system_size_amplificator & ! normalization constant
                         )
     INTEGER, INTENT(IN) :: N
-    REAL(8), INTENT(IN) :: masses(N), positions(N,3)
+    REAL(pf), INTENT(IN) :: masses(N), positions(3,N)
     TYPE(node_type), ALLOCATABLE, INTENT(OUT) :: nodes(:)
     INTEGER, ALLOCATABLE, INTENT(INOUT) :: level_begin(:), level_end(:)
     INTEGER, INTENT(INOUT) :: L_par
     INTEGER, INTENT(OUT)   :: nnodes
     INTEGER, INTENT(INOUT) :: perm(N)
-    REAL(8), INTENT(INOUT) :: ms(N), qs(N,3)
-    REAL(8), INTENT(IN)    :: system_size_amplificator
+    REAL(pf), INTENT(INOUT) :: ms(N), qs(3,N)
+    REAL(pf), INTENT(IN)    :: system_size_amplificator
 
-    REAL(8) :: ssi(4) ! system size info
-    REAL(8) :: ssa ! system size amplified
-    REAL(8) :: qcm(3), mass ! center of mass and mass
+    REAL(pf) :: ssi(4) ! system size info
+    REAL(pf) :: ssa ! system size amplified
+    REAL(pf) :: qcm(3), mass ! center of mass and mass
     INTEGER :: i, p, level, parent ! auxiliar
-    REAL(8) :: positions_norm(N,3) ! normalized positions in [0,1]^3
+    REAL(pf) :: positions_norm(3,N) ! normalized positions in [0,1]^3
     INTEGER :: L ! depth
     INTEGER(8), ALLOCATABLE :: prefixes(:,:) ! prefixes of the keys
     INTEGER(8) :: keys(N), keys_tmp(N) ! Morton keys
@@ -340,17 +361,17 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
     ssa = system_size_amplificator * ssi(4)
 
     ! center of mass and total mass of the system
-    qcm  = 0.0d0
-    mass = 0.0d0
+    qcm  = 0.0_pf
+    mass = 0.0_pf
     DO p = 1, N
-        qcm = qcm + masses(p) * positions(p,:)
+        qcm = qcm + masses(p) * positions(:,p)
         mass = mass + masses(p)
     END DO
     qcm = qcm / mass
 
     ! normalized coordinates in [0,1]^3
     DO p = 1, N
-        positions_norm(p,:) = positions(p,:) - qcm
+        positions_norm(:,p) = positions(:,p) - qcm
     END DO
     positions_norm = positions_norm / ssa
     
@@ -358,9 +379,9 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
     ! ssi(1:3) = (ssi(1:3) - qcm)/(mass * ssa)
     ssi = system_size_info(N, positions_norm)
     ! translate the center of the system to (1/2,1/2,1/2)
-    positions_norm(:,1) = positions_norm(:,1) + 0.5d0 - ssi(1)
-    positions_norm(:,2) = positions_norm(:,2) + 0.5d0 - ssi(2)
-    positions_norm(:,3) = positions_norm(:,3) + 0.5d0 - ssi(3)
+    positions_norm(1,:) = positions_norm(1,:) + 0.5_pf - ssi(1)
+    positions_norm(2,:) = positions_norm(2,:) + 0.5_pf - ssi(2)
+    positions_norm(3,:) = positions_norm(3,:) + 0.5_pf - ssi(3)
 
     ! choose the depth or use the informed deepth
     L = L_par
@@ -369,7 +390,7 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
         L_par = L
     ELSE
         DO p = 1, N
-            keys(p) = morton_key(positions_norm(p,:), L)
+            keys(p) = morton_key(positions_norm(:,p), L)
         END DO
     ENDIF
 
@@ -387,7 +408,7 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
     DO p = 1, N
         keys_tmp(p) = keys(perm(p))
         ms(p) = masses(perm(p))
-        qs(p,:) = positions(perm(p),:)
+        qs(:,p) = positions(:,perm(p))
 
         DO level = 0, L
             prefixes(p,level+1) = prefix(keys_tmp(p), level, L)
@@ -423,7 +444,7 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
                     current = pref
                     child_first = i
                     mass = ms(i)
-                    qcm = mass * qs(i,:)
+                    qcm = mass * qs(:,i)
 
                 ! if its a different node
                 ELSE IF (pref .NE. current) THEN
@@ -433,7 +454,7 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
                     ! create the child node
                     nodes(nnodes) = create_node(&
                         level, current, child_first, i-1, mass, qcm, &
-                        ssa*(2.0d0**(-level)) &
+                        ssa*(2.0_pf**(-level)) &
                         )
                     nodes(nnodes) % parent = parent
                     
@@ -445,12 +466,12 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
                     current = pref
                     child_first = i
                     mass = ms(i)
-                    qcm = mass * qs(i,:)
+                    qcm = mass * qs(:,i)
 
                 ! if its the same node
                 ELSE
                     mass = mass + ms(i)
-                    qcm = qcm + ms(i) * qs(i,:)
+                    qcm = qcm + ms(i) * qs(:,i)
                 ENDIF
             END DO particles_loop
 
@@ -459,7 +480,7 @@ SUBROUTINE generate_nodes (N, masses, positions, & ! state vectors (IN)
             qcm = qcm / mass
             nodes(nnodes) = create_node(&
                 level, current, child_first, last, mass, qcm, &
-                ssa*(2.0d0**(-level)) &
+                ssa*(2.0_pf**(-level)) &
             )
             nodes(nnodes) % parent = parent
 
@@ -542,22 +563,22 @@ SUBROUTINE evaluate_quadrupoles (nodes, nnodes, ms, qs, max_level, level_begin, 
     TYPE(node_type), INTENT(INOUT) :: nodes(:)
     INTEGER, INTENT(IN) :: nnodes  ! number of nodes
     INTEGER, INTENT(IN) :: max_level, level_begin(:), level_end(:) ! level information
-    REAL(8), INTENT(IN) :: ms(:), qs(:,:) ! permuted state vectors
+    REAL(pf), INTENT(IN) :: ms(:), qs(:,:) ! permuted state vectors
     
     INTEGER :: node_idx, child_idx, p, level
-    REAL(8) :: pm, px, py, pz, dxi, dyi, dzi
+    REAL(pf) :: pm, px, py, pz, dxi, dyi, dzi
 
     INTEGER :: child_pos
 
     DO level = max_level, 0, -1
         DO node_idx = level_begin(level+1), level_end(level+1)
-            nodes(node_idx) % quad = 0.0d0
+            nodes(node_idx) % quad = 0.0_pf
             IF (nodes(node_idx) % nchild <= 1) THEN
                 DO p = nodes(node_idx) % first, nodes(node_idx) % last
                     pm = ms(p)
-                    px = qs(p,1)
-                    py = qs(p,2)
-                    pz = qs(p,3)
+                    px = qs(1,p)
+                    py = qs(2,p)
+                    pz = qs(3,p)
 
                     dxi = px - nodes(node_idx) % qcm(1)
                     dyi = py - nodes(node_idx) % qcm(2)
@@ -612,30 +633,30 @@ FUNCTION barnes_hut (p, & ! particle index (sorted)
     ) RESULT(forces)
     TYPE(node_type), INTENT(IN) :: nodes(:)
     INTEGER, INTENT(IN) :: p
-    REAL(8), INTENT(IN) :: ms(:), qs(:,:)
-    REAL(8), INTENT(IN) :: theta2, G, eps2         
+    REAL(pf), INTENT(IN) :: ms(:), qs(:,:)
+    REAL(pf), INTENT(IN) :: theta2, G, eps2         
     LOGICAL, INTENT(IN), OPTIONAL :: mult_par
 
-    REAL(8) :: forces(3)
+    REAL(pf) :: forces(3)
     LOGICAL :: mult ! multipole use
     LOGICAL :: only_one_particle
-    REAL(8) :: mp, qp(3) ! particle state
+    REAL(pf) :: mp, qp(3) ! particle state
     INTEGER :: idx, b
-    REAL(8) :: dx, dy, dz, dist2, invdist3, f ! forces
+    REAL(pf) :: dx, dy, dz, dist2, invdist3, f ! forces
     ! multipole variables
-    REAL(8) :: invR, invR2, invR3, invR5 
-    REAL(8) :: mx, my, mz
-    REAL(8) :: mxi2, myi2, mzi2, mxyi, mxzi, myzi
-    REAL(8) :: dx2, dy2, dz2, dxyz
-    REAL(8) :: Qx, Qy, Qz
+    REAL(pf) :: invR, invR2, invR3, invR5 
+    REAL(pf) :: mx, my, mz
+    REAL(pf) :: mxi2, myi2, mzi2, mxyi, mxzi, myzi
+    REAL(pf) :: dx2, dy2, dz2, dxyz
+    REAL(pf) :: Qx, Qy, Qz
 
     mult = .FALSE.
     IF (PRESENT(mult_par)) mult = mult_par
 
     mp = ms(p)
-    qp = qs(p,:)
+    qp = qs(:,p)
 
-    forces = 0.0d0
+    forces = 0.0_pf
     idx = 1
 
     DO WHILE (idx .NE. 0)
@@ -652,11 +673,11 @@ FUNCTION barnes_hut (p, & ! particle index (sorted)
             DO b = nodes(idx) % first, nodes(idx) % last
                 IF (p == b) CYCLE
 
-                dx = qs(b,1) - qp(1)
-                dy = qs(b,2) - qp(2)
-                dz = qs(b,3) - qp(3)
+                dx = qs(1,b) - qp(1)
+                dy = qs(2,b) - qp(2)
+                dz = qs(3,b) - qp(3)
                 dist2 = dx*dx + dy*dy + dz*dz + eps2
-                invdist3 = 1.0d0 / SQRT(dist2)
+                invdist3 = 1.0_pf / SQRT(dist2)
                 invdist3 = invdist3 * invdist3 * invdist3
                 f = G * mp * ms(b) * invdist3
                 
@@ -688,7 +709,7 @@ FUNCTION barnes_hut (p, & ! particle index (sorted)
 
                 ! if not multipole or is there only one particle
                 IF (.NOT. mult .OR. only_one_particle) THEN
-                    invdist3 = 1.0d0 / SQRT(dist2)
+                    invdist3 = 1.0_pf / SQRT(dist2)
                     invdist3 = invdist3 * invdist3 * invdist3
                     f = G * mp * nodes(idx) % mass * invdist3
 
@@ -698,8 +719,8 @@ FUNCTION barnes_hut (p, & ! particle index (sorted)
                 
                 ! apply multipole
                 ELSE
-                    invR  = 1.0d0 / SQRT(dist2)
-                    invR2 = 1.0d0 / dist2
+                    invR  = 1.0_pf / SQRT(dist2)
+                    invR2 = 1.0_pf / dist2
                     invR3 = invR * invR2
                     invR5 = invR3 * invR * invR
 
@@ -714,14 +735,14 @@ FUNCTION barnes_hut (p, & ! particle index (sorted)
                     mxzi = nodes(idx) % quad(5)
                     myzi = nodes(idx) % quad(6)
 
-                    dx2 = 15.0d0 * dx * dx * invR2 - 3.0d0
-                    dy2 = 15.0d0 * dy * dy * invR2 - 3.0d0
-                    dz2 = 15.0d0 * dz * dz * invR2 - 3.0d0
-                    dxyz = 15.0d0 * dx * dy * dz * invR2
+                    dx2 = 15.0_pf * dx * dx * invR2 - 3.0_pf
+                    dy2 = 15.0_pf * dy * dy * invR2 - 3.0_pf
+                    dz2 = 15.0_pf * dz * dz * invR2 - 3.0_pf
+                    dxyz = 15.0_pf * dx * dy * dz * invR2
 
-                    Qx = (mxi2 * (dx2 - 6.0d0) + myi2 * dy2 + mzi2 * dz2) * 0.5d0 * dx
-                    Qy = (myi2 * (dy2 - 6.0d0) + mzi2 * dz2 + mxi2 * dx2) * 0.5d0 * dy
-                    Qz = (mzi2 * (dz2 - 6.0d0) + mxi2 * dx2 + myi2 * dy2) * 0.5d0 * dz
+                    Qx = (mxi2 * (dx2 - 6.0_pf) + myi2 * dy2 + mzi2 * dz2) * 0.5_pf * dx
+                    Qy = (myi2 * (dy2 - 6.0_pf) + mzi2 * dz2 + mxi2 * dx2) * 0.5_pf * dy
+                    Qz = (mzi2 * (dz2 - 6.0_pf) + mxi2 * dx2 + myi2 * dy2) * 0.5_pf * dz
 
                     Qx = Qx + mxyi * dy * dx2 + mxzi * dz * dx2 + myzi * dxyz
                     Qy = Qy + myzi * dz * dy2 + mxyi * dx * dy2 + mxzi * dxyz
@@ -741,30 +762,6 @@ FUNCTION barnes_hut (p, & ! particle index (sorted)
             idx = nodes(idx) % child(1)
             CYCLE
         ENDIF
-    END DO
-END FUNCTION
-
-FUNCTION eval_forces (nodes, perm, masses, positions, theta2, G, eps2, quad_par) RESULT(forces)
-    TYPE(node_type), INTENT(IN) :: nodes(:)
-    INTEGER, INTENT(IN) :: perm(:)
-    REAL(8), INTENT(IN) :: masses(:), positions(:,:)
-    REAL(8), INTENT(IN) :: theta2, G, eps2
-    LOGICAL, INTENT(IN), OPTIONAL :: quad_par
-
-    REAL(8) :: forces(SIZE(masses),3), ms(SIZE(masses)), qs(SIZE(masses),3)
-    INTEGER :: p
-    LOGICAL :: use_quadrupole
-
-    use_quadrupole = .FALSE.
-    IF (PRESENT(quad_par)) use_quadrupole = quad_par
-
-    DO p = 1, SIZE(ms)
-        qs(p,:) = positions(perm(p),:)
-        ms(p) = masses(perm(p))
-    END DO
-
-    DO p = 1, SIZE(ms)
-        forces(perm(p),:) = barnes_hut(p, nodes, ms, qs, theta2, G, eps2, use_quadrupole)
     END DO
 END FUNCTION
 
