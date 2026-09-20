@@ -87,6 +87,9 @@ SUBROUTINE init (self, m, x, y, z, multipole, save_txt)
     self % most_depth = 0
     ALLOCATE(self % counter_for_each_level(self % max_depth))
     self % counter_for_each_level = 0
+    
+    ! about the use of multipoles
+    self % multipole = multipole
 
     ! init the root
     self % max_number_of_nodes = 8 * self % N
@@ -284,9 +287,6 @@ SUBROUTINE add_node (self, cx, cy, cz, side, depth, idx)
     self % ns_qcm_y(idx) = 0.0_pf
     self % ns_qcm_z(idx) = 0.0_pf
     self % ns_particle(idx) = -1
-    
-    ! quadrupole
-    self % ns_quad(idx,:) = 0.0_pf
 END SUBROUTINE
 
 SUBROUTINE allocate_subnode (self, node_idx, index)
