@@ -30,6 +30,18 @@ python barnes_morton_keys.py
 
 ---
 
+## Atualização 2: As translações dão uma boa acelerada nos multipolos
+
+O jeito que eu tinha implementado de calcular multipolos estava bem devagar. A sugestão de Pfalzner e Gibbon de fazer translações realmente dá uma boa ajudada.
+
+Quadrupolo:
+
+![](img/new_test_forces_time_quadrupole.png)
+
+Octupolo:
+
+![](img/new_test_forces_time_octupole.png)
+
 # Parareal
 
 Pela dificuldade de lidar com o pymgrit, decidi implementar o Parareal na marra, e parece que deu certo! Veja o exemplo de saída rodando o Parareal com Barnes-Hut vs Parareal direto vs sequencial para um problema de 1000 corpos:

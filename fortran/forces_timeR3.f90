@@ -6,7 +6,6 @@
 ! It achieves the O(N log N), as expected :)
 PROGRAM forces_time
     USE octree_mod
-    USE morton_octree_mod
     USE omp_lib
     IMPLICIT NONE
 
@@ -15,29 +14,57 @@ PROGRAM forces_time
     INTEGER :: file, nt
     REAL(pf) :: thetas(5), eps2
 
+    INTEGER :: Nmin, Nmax, Nstep
+    LOGICAL :: quad
+
     file = 45
     nt = 10 ! number of threads
-    eps2 = (0.1_pf)**2
+    ! eps2 = (0.1_pf)**2
+    eps2 = 0.0_pf
 
-    ! thetas(1) = 0.0_pf
-    ! thetas(2) = 0.2_pf
-    ! thetas(3) = 0.25_pf
-    ! thetas(4) = 0.5_pf
-
-    thetas(1) = 0.2_pf
+    thetas(1) = 0.0_pf
     thetas(2) = 0.25_pf
     thetas(3) = 0.5_pf
     thetas(4) = 0.75_pf
-    thetas(1) = 1.5_pf
+    thetas(5) = 1.0_pf
+
+    ! thetas(1) = 0.2_pf
+    ! thetas(2) = 0.25_pf
+    ! thetas(3) = 0.5_pf
+    ! thetas(4) = 0.75_pf
+    ! thetas(5) = 1.5_pf
+
+    ! thetas(1) = 0.2_pf
+    ! thetas(2) = 0.3_pf
+    ! thetas(3) = 0.4_pf
+    ! thetas(4) = 0.5_pf
+    ! thetas(5) = 0.6_pf
+    ! thetas(6) = 0.7_pf
+    ! thetas(7) = 0.8_pf
+    ! thetas(8) = 0.9_pf
+    ! thetas(9) = 1.0_pf
+
+    Nmin = 500
+    Nmax = 10000
+    Nstep = 500
 
     !!OPEN(file, file = "out/forces_time_morton_parallel_20C_N10K.txt", status="replace")
-    OPEN(file, file = "out/morton_forces_time.txt", status="replace")
-    CALL test_forces_time_morton(100, 10000, 100, thetas, eps2, 20, file, nt)
-    CLOSE(file)
+    ! OPEN(file, file = "out/test_morton_forces_time.txt", status="replace")
+    ! CALL test_forces_time_morton(Nmin, Nmax, Nstep, thetas, eps2, 20, file, nt, quad)
+    ! CLOSE(file)
 
     !!OPEN(file, file = "forces_time_without_morton_sequential.txt", status="replace")
-    OPEN(file, file = "out/forces_time.txt", status="replace")
-    CALL test_forces_time(100, 10000, 100, thetas, eps2, 20, file, nt)
+    print *, '# monopole'
+    OPEN(file, file = "out/test_multipoles_thetas_monopole.txt", status="replace")
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps2, 20, file, nt, 1)
+
+    print *, '# quadrupole'
+    OPEN(file, file = "out/test_multipoles_thetas_quadrupole.txt", status="replace")
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps2, 20, file, nt, 4)
+
+    print *, '# octupole'
+    OPEN(file, file = "out/test_multipoles_thetas_octupole.txt", status="replace")
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps2, 20, file, nt, 8)
     CLOSE(file)
 CONTAINS
 
@@ -57,14 +84,16 @@ SUBROUTINE generate_initial_values (N, m, x, y, z)
     z = qs(3,:)
 END SUBROUTINE
 
-SUBROUTINE test_forces_time (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt)
-    INTEGER, INTENT(IN) :: Nmin, Nmax, Nstep, tests, file, nt
+SUBROUTINE test_forces_time (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt, multipole)
+    INTEGER,  INTENT(IN) :: Nmin, Nmax, Nstep, tests, file, nt
     REAL(pf), INTENT(IN) :: thetas(:), eps2
+    INTEGER,  INTENT(IN) :: multipole
     INTEGER :: N, i_test, i_theta, p, timer
     REAL(pf), ALLOCATABLE :: m(:), x(:), y(:), z(:), forces(:,:), forces0(:,:)
     REAL(pf) :: time_start, time_finish, total, time_generate_tree
     REAL(pf) :: theta, erro, time_quad
     CLASS(OctreeType), ALLOCATABLE :: tree
+    REAL(pf) :: a_scale
 
     DO N = Nmin, Nmax, Nstep
         PRINT *, 'N=', N
@@ -100,7 +129,7 @@ SUBROUTINE test_forces_time (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt)
             ALLOCATE(tree)
             
             time_start = omp_get_wtime()
-            CALL tree % init(m, x, y, z, .TRUE.)
+            CALL tree % init(m, x, y, z, multipole)
             time_finish = omp_get_wtime()
             time_generate_tree = time_finish - time_start
 
@@ -111,19 +140,38 @@ SUBROUTINE test_forces_time (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt)
                 time_start = omp_get_wtime()
 
                 ! now test the tree
-                !$OMP PARALLEL DO SHARED(forces) PRIVATE(p) NUM_THREADS(nt) &
-                !$OMP SCHEDULE(DYNAMIC)
-                DO p = 1, N
-                    forces(:,p) = tree % forces(p, theta, 1.0_pf, eps2)
-                END DO
-                !$OMP END PARALLEL DO
+                IF (nt == 1) THEN
+                    DO p = 1, N
+                        IF (multipole == 1 .or. multipole == 4) THEN
+                            forces(:,p) = tree % forces(p, theta, 1.0_pf, eps2)
+                        ELSE
+                            forces(:,p) = tree % evaluate_forces_over_p_octupole(p, theta, 1.0_pf, eps2)
+                        ENDIF
+                    END DO
+                ELSE
+                    !$OMP PARALLEL DO SHARED(forces) PRIVATE(p) NUM_THREADS(nt) &
+                    !$OMP SCHEDULE(DYNAMIC)
+                    DO p = 1, N
+                        IF (multipole == 1 .or. multipole == 4) THEN
+                            forces(:,p) = tree % forces(p, theta, 1.0_pf, eps2)
+                        ELSE
+                            forces(:,p) = tree % evaluate_forces_over_p_octupole(p, theta, 1.0_pf, eps2)
+                        ENDIF
+                    END DO
+                    !$OMP END PARALLEL DO
+                ENDIF
 
                 ! CALL CPU_TIME(time_finish)
                 time_finish = omp_get_wtime()
 
                 total = time_finish - time_start + time_generate_tree
 
-                erro = NORM2(forces - forces0)/NORM2(forces0)
+                ! erro = NORM2(forces - forces0)/NORM2(forces0)
+                a_scale = 0.0_pf
+                DO p = 1, N
+                    a_scale = a_scale + m(p) / (x(p)**2 + y(p)**2 + z(p)**2)
+                END DO
+                erro = SQRT((NORM2(forces - forces0)/a_scale)**2 / N)
 
                 IF (i_test > 1) WRITE(file, *) N, thetas(i_theta), total, erro
             END DO
@@ -131,74 +179,6 @@ SUBROUTINE test_forces_time (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt)
             DEALLOCATE(tree)
         END DO
         DEALLOCATE(m, x, y, z, forces, forces0)
-    END DO
-END SUBROUTINE
-
-SUBROUTINE test_forces_time_morton (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt)
-    INTEGER, INTENT(IN) :: Nmin, Nmax, Nstep, tests, file, nt
-    REAL(pf), INTENT(IN) :: thetas(:), eps2
-    INTEGER :: N, i_test, i_theta, p, timer
-    REAL(pf), ALLOCATABLE :: m(:), x(:), y(:), z(:), forces(:,:), forces0(:,:), forces_a(:,:), qs(:,:)
-    REAL(pf) :: time_start, time_finish, total, time_generate_tree
-    REAL(pf) :: theta, erro, time_quad
-    INTEGER :: L = 0
-
-    TYPE(morton_tree_type), ALLOCATABLE :: morton_tree
-
-    DO N = Nmin, Nmax, Nstep
-        PRINT *, 'N=', N
-        ALLOCATE(qs(3,N))
-        ALLOCATE(m(N))
-        ALLOCATE(x(N))
-        ALLOCATE(y(N))
-        ALLOCATE(z(N))
-        ALLOCATE(forces0(3,N))
-        ALLOCATE(forces(3,N))
-
-        DO i_test = 1, tests + 1
-            CALL generate_initial_values(N, m, x, y, z)
-            qs(1,:) = x
-            qs(2,:) = y
-            qs(3,:) = z
-
-            ! compute forces directly
-            ! CALL CPU_TIME(time_start)
-            time_start = omp_get_wtime()
-
-            forces0 = compute_forces_direct(m, x, y, z, 1.0_pf, eps2, nt)
-
-            ! CALL CPU_TIME(time_finish)
-            time_finish = omp_get_wtime()
-            total = time_finish - time_start
-            IF (i_test > 1) WRITE(file, *) N, -1.0_pf, total, 0.0_pf
-
-            ALLOCATE(morton_tree)
-            time_start = omp_get_wtime()
-            CALL morton_tree % init(N, m, qs, L, 1.2_pf, .true.)
-            time_finish = omp_get_wtime()
-            time_generate_tree = time_finish - time_start
-
-            DO i_theta = 1, SIZE(thetas)
-                theta = thetas(i_theta)**2
-
-                ! CALL CPU_TIME(time_start)
-                time_start = omp_get_wtime()
-
-                forces = morton_tree % forces_par(1.0_pf, eps2, theta, .true., nt)
-
-                ! CALL CPU_TIME(time_finish)
-                time_finish = omp_get_wtime()
-
-                total = time_finish - time_start + time_generate_tree
-
-                erro = NORM2(forces - forces0)/NORM2(forces0)
-
-                IF (i_test > 1) WRITE(file, *) N, thetas(i_theta), total, erro
-            END DO
-
-            DEALLOCATE(morton_tree)
-        END DO
-        DEALLOCATE(m, qs, x, y, z, forces, forces0)
     END DO
 END SUBROUTINE
 
