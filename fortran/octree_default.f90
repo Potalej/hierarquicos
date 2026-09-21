@@ -7,7 +7,7 @@
 !  approximation with a quadrupole expansion.
 !
 !> Modified
-!  2026.09.19
+!  2026.09.20
 !
 !> Created
 !  2026.06.15
@@ -24,7 +24,7 @@ MODULE octree_mod
 
     TYPE :: OctreeType
         ! max depth of the tree
-        INTEGER :: max_depth = 20
+        INTEGER :: max_depth = 25
         ! amplificator of the size of the quadtree-root
         REAL(pf) :: side_amplificator = 1.2_pf
         ! multipole
@@ -85,7 +85,7 @@ SUBROUTINE init (self, m, x, y, z, multipole, save_txt)
 
     ! about the depth
     self % most_depth = 0
-    ALLOCATE(self % counter_for_each_level(self % max_depth))
+    ALLOCATE(self % counter_for_each_level(self % max_depth+1))
     self % counter_for_each_level = 0
     
     ! about the use of multipoles
@@ -393,23 +393,21 @@ SUBROUTINE add (self, node_idx, p)
 
     ! if isnt empty, it become a twig
     IF (self % ns_type(node_idx) == 1) THEN
-        ! we cannot go beyond the depth limit
-        IF (self % ns_depth(node_idx) >= self % max_depth) THEN
-            PRINT *, "BIG PROBLEM !!! MAX DEPTH !!!"
-            STOP 0
-        ENDIF
-
         ! in this case, its now a twig
         self % ns_type(node_idx) = 2
-
-        ! add the old particle as a particle per si
         old_p = self % ns_particle(node_idx)
         self % ns_particle(node_idx) = -1
-        CALL self % add_to_subnode(node_idx, old_p)
+
+        ! if it is not at the deepest level, we can subdivide
+        IF (self % ns_depth(node_idx) < self % max_depth) THEN
+            CALL self % add_to_subnode(node_idx, old_p)
+        ENDIF
     ENDIF
 
-    ! now add the new particle
-    CALL self % add_to_subnode(node_idx, p)
+    ! now add the new particle if its not at the deepest level subdividing it
+    IF (self % ns_depth(node_idx) < self % max_depth) THEN
+        CALL self % add_to_subnode(node_idx, p)
+    ENDIF
 END SUBROUTINE
 
 SUBROUTINE evaluate_multipole (self)
@@ -428,8 +426,14 @@ SUBROUTINE evaluate_multipole (self)
     self % ns_quad = 0.0_pf
     self % ns_oct  = 0.0_pf
 
-    ! start by the almost deepest level (the deepest only have leafs)
-    level = self % most_depth - 1
+    ! if the max depth was reached, we start at the deepest level
+    IF (self % most_depth == self % max_depth) THEN
+        level = self % most_depth
+
+    ! if no, we can start at the almost depth because the lower only will have leafs
+    ELSE
+        level = self % most_depth - 1
+    ENDIF
     counter = 0
     
     keqc = self % number_of_nodes ! key end queue current
@@ -444,8 +448,6 @@ SUBROUTINE evaluate_multipole (self)
         kqc = kqc + 1
         node_idx = queue_current(kqc)
 
-        IF (self % ns_depth(node_idx) == self % most_depth) CYCLE
-
         ! if isnt in the level, get the next
         IF (self % ns_depth(node_idx) < level) THEN
             keqn = keqn + 1
@@ -453,7 +455,7 @@ SUBROUTINE evaluate_multipole (self)
             CYCLE
 
         ! if its in the level, evaluate
-        ELSE
+        ELSE IF (self % ns_depth(node_idx) == level) THEN
             counter = counter + 1
             IF (counter == self % counter_for_each_level(level+1)) THEN
                 level = level - 1
@@ -477,6 +479,11 @@ SUBROUTINE evaluate_multipole (self)
 
             ! if its a leaf, it doesnt have contributions
             IF (self % ns_type(node_idx) == 1) THEN
+                CYCLE
+            ENDIF
+
+            ! if its a twig but it is in the deepest level, it doesnt have contributions also
+            IF (self % ns_depth(node_idx) == self % max_depth) THEN
                 CYCLE
             ENDIF
 
@@ -633,8 +640,11 @@ FUNCTION evaluate_forces_over_p (self, p, par_theta2, par_G, par_eps2) RESULT (f
         dist2 = dx*dx + dy*dy + dz*dz
         L2 = self % ns_L2(node_idx)
 
-        ! leaf or bh criterion
-        IF (self % ns_type(node_idx) == 1 .OR. L2 <= theta2 * dist2) THEN
+        ! leaf (or twig at the deepest level) or bh criterion
+        IF (self % ns_type(node_idx) == 1 & ! leaf
+            .OR. L2 <= theta2 * dist2     & ! bh criterion
+            .OR. self % ns_depth(node_idx) == self % max_depth & ! deepest level
+        ) THEN
             IF (self % ns_type(node_idx) == 1 .OR. self % multipole == 1) THEN
                 rinv = 1.0_pf / SQRT(dist2 + eps2)
                 rinv = rinv * rinv * rinv
