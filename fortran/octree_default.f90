@@ -424,7 +424,7 @@ SUBROUTINE evaluate_multipole (self)
 
     ! multipole state vectors
     self % ns_quad = 0.0_pf
-    self % ns_oct  = 0.0_pf
+    IF (self % multipole > 4) self % ns_oct  = 0.0_pf
 
     ! if the max depth was reached, we start at the deepest level
     IF (self % most_depth == self % max_depth) THEN
