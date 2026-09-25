@@ -69,6 +69,13 @@ SUBROUTINE generate_initial_values (N, m, qs, ps, size_qs, size_ps, nm, td, pr, 
             ENDIF
             CALL generate_initial_values_homogeneous_sphere(N, m, qs, ps, size_qs, size_ps, &
                                                             nm, td, pp)
+        
+        CASE ("hernquist")
+            IF (.NOT. PRESENT(pp) .OR. SIZE(pp) .NE. 2) THEN
+                STOP "For the Hernquist sphere profile, it is necessary to set the parameters G and a"
+            ENDIF
+            CALL generate_initial_values_hernquist_isotropic(N, m, qs, ps, size_qs, size_ps, &
+                                                            nm, td, pp)
 
         CASE DEFAULT
             STOP 'Unknow density profile: "'//TRIM(pr)//'"'
@@ -145,6 +152,9 @@ SUBROUTINE generate_initial_values_plummer (N, m, qs, ps, size_qs, size_ps, nm, 
     REAL(8) :: G, plupar
     REAL(8) :: max_ps(3), big_ps
 
+    REAL(8) :: v, v_phi, v_cos_theta, v_sin_theta
+    REAL(8) :: qvn, yvn
+
     ! parameters
     G = pars(1)
     plupar = pars(2)
@@ -195,8 +205,41 @@ SUBROUTINE generate_initial_values_plummer (N, m, qs, ps, size_qs, size_ps, nm, 
         DO i = 1, N
             plummer_potential = - G * 1.0d0 / SQRT(r(i)**2 + plupar**2)
             v_escape(i) = SQRT(-2.0d0 * plummer_potential)
+
+            von_neumann: DO WHILE (.TRUE.)
+                CALL random_number(qvn)
+                CALL random_number(yvn)
+                yvn = 0.1d0 * yvn
+
+                IF (yvn < qvn*qvn*(1.0d0 - qvn*qvn)**(3.5d0)) EXIT von_neumann
+            END DO von_neumann
+
+            v = qvn * v_escape(i)
+
+            CALL random_number(v_phi)
+            v_phi = 2.0d0 * PI * v_phi
+
+            IF (td) THEN
+                v_cos_theta = 0.0d0
+                v_sin_theta = 1.0d0
+            ELSE
+                CALL random_number(v_cos_theta)
+                v_cos_theta = 2.0d0 * v_cos_theta - 1.0d0
+                v_sin_theta = SQRT(1.0d0 - v_cos_theta**2)
+            ENDIF
+
+            ps(1,i) = m(i) * v * v_sin_theta * COS(v_phi)
+            ps(2,i) = m(i) * v * v_sin_theta * SIN(v_phi)
+            ps(3,i) = m(i) * v * v_cos_theta
         END DO
-        CALL generate_isotropic_velocities(N, m, v_escape, td, size_ps, ps)
+        IF (size_ps >= 0) THEN
+            max_ps(1) = MAXVAL(ABS(ps(1,:)))
+            max_ps(2) = MAXVAL(ABS(ps(2,:)))
+            max_ps(3) = MAXVAL(ABS(ps(3,:)))
+            big_ps = MAXVAL(max_ps)
+
+            IF (big_ps > size_ps) ps = ps * size_ps / big_ps
+        ENDIF
 
     !> 2d
     IF (td) THEN
@@ -279,8 +322,9 @@ SUBROUTINE generate_initial_values_homogeneous_sphere (N, m, qs, ps, &
                 potential = - 2.0d0 * potential * (Rpar**3 / r(i))
             ENDIF
             v_escape(i) = SQRT(-2.0d0 * potential)
+
+            ! TODO
         END DO
-        CALL generate_isotropic_velocities(N, m, v_escape, td, size_ps, ps)
 
     !> 2d
     IF (td) THEN
@@ -289,55 +333,83 @@ SUBROUTINE generate_initial_values_homogeneous_sphere (N, m, qs, ps, &
     ENDIF
 END SUBROUTINE
 
-SUBROUTINE generate_isotropic_velocities (N, m, v_escape, td, size_ps, ps)
-    INTEGER, INTENT(IN) :: N
-    REAL(8), INTENT(IN) :: m(N), v_escape(N), size_ps
-    LOGICAL, INTENT(IN) :: td ! two dimensional
-    REAL(8), INTENT(OUT) :: ps(3,N)
-    INTEGER :: i
+SUBROUTINE generate_initial_values_hernquist_isotropic (N, m, qs, ps, &
+            size_qs, size_ps, nm, td, pars)
+! Generates random initial values with Hernquist density and isotropic velocities.
+! The masses can be 1/N if nm == .TRUE. or uniformly distributed with M = 1.
+    INTEGER,  INTENT(IN) :: N
+    LOGICAL,  INTENT(IN) :: nm, td ! normalized masses, two dimensional
+    REAL(8), INTENT(IN) :: pars(3) ! G, R and rho0
+    REAL(8), INTENT(IN) :: size_qs, size_ps
+    REAL(8), INTENT(INOUT) :: m(N), qs(3,N), ps(3,N)
 
-    REAL(8) :: v, v_phi, v_cos_theta, v_sin_theta
-    REAL(8) :: qvn, yvn
-    REAL(8) :: max_ps(3), big_ps
+    REAL(8) :: X1, X2(N), X3(N)
+    REAL(8) :: r(N), phi(N), cos_theta(N), sin_theta(N)
     
-    DO i = 1, N
-        von_neumann: DO WHILE (.TRUE.)
-            CALL random_number(qvn)
-            CALL random_number(yvn)
-            yvn = 0.1d0 * yvn
+    INTEGER  :: i
+    REAL(8) :: potential, v_escape(N)
+    REAL(8) :: G, apar ! parameters of the profile
+    REAL(8) :: max_ps(3), big_ps
 
-            IF (yvn < qvn*qvn*(1.0d0 - qvn*qvn)**(3.5d0)) EXIT von_neumann
-        END DO von_neumann
+    ! parameters
+    G = pars(1)
+    apar = pars(2)
 
-        v = qvn * v_escape(i)
+    CALL random_seed()
 
-        CALL random_number(v_phi)
-        v_phi = 2.0d0 * PI * v_phi
+    !> MASSES
+    !  m = 1/N
+        m = 1.0d0 / N
 
+    !> POSITIONS
+    !  Inverting the cumulative distribution function P to get r = P(u), u \sim U[0,1]
+        i = 1
+        DO WHILE (i <= N)
+            ! uniformly distributed values
+            CALL random_number(X1)
+
+            ! apply P^-1(u) = r
+            r(i) = apar * SQRT(X1)/(1.0d0 - SQRT(X1))
+            IF (size_qs >= 0 .AND. r(i) > size_qs) CYCLE
+
+            i = i + 1
+        END DO
+
+        ! phi angle variables
+        CALL random_number(X2)
+        phi = 2.0d0 * PI * X2
+
+        ! theta angle variables
+        ! if two dimensional, theta = PI
         IF (td) THEN
-            v_cos_theta = 0.0d0
-            v_sin_theta = 1.0d0
+            cos_theta = 0.0d0
+            sin_theta = 1.0d0
         ELSE
-            CALL random_number(v_cos_theta)
-            v_cos_theta = 2.0d0 * v_cos_theta - 1.0d0
-            v_sin_theta = SQRT(1.0d0 - v_cos_theta**2)
+            CALL random_number(X3)
+            cos_theta = 2.0d0 * X3 - 1.0d0
+            sin_theta = SQRT(1.0d0 - cos_theta*cos_theta)
         ENDIF
 
-        ps(1,i) = m(i) * v * v_sin_theta * COS(v_phi)
-        ps(2,i) = m(i) * v * v_sin_theta * SIN(v_phi)
-        ps(3,i) = m(i) * v * v_cos_theta
-    END DO
+        ! now evaluate the positions
+        qs(1,:) = r * sin_theta * COS(phi)
+        qs(2,:) = r * sin_theta * SIN(phi)
+        qs(3,:) = r * cos_theta
 
-    IF (size_ps >= 0) THEN
-        max_ps(1) = MAXVAL(ABS(ps(1,:)))
-        max_ps(2) = MAXVAL(ABS(ps(2,:)))
-        max_ps(3) = MAXVAL(ABS(ps(3,:)))
-        big_ps = MAXVAL(max_ps)
+    !> MOMENTA
+    !  By von Neumann rejection
+        ! first we evaluate the escape velocities
+        DO i = 1, N
+            potential = - G/ (apar + r(i))
+            v_escape(i) = SQRT(-2.0d0 * potential)
 
-        IF (big_ps > size_ps) ps = ps * size_ps / big_ps
+            ! TODO
+        END DO
+        
+    !> 2d
+    IF (td) THEN
+        ps(3,:) = 0.0d0
+        qs(3,:) = 0.0d0
     ENDIF
-
-    IF (td) ps(3,:) = 0.0d0
 END SUBROUTINE
 
 END MODULE
