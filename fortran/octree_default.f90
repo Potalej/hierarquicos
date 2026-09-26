@@ -7,7 +7,7 @@
 !  approximation with a quadrupole expansion.
 !
 !> Modified
-!  2026.09.20
+!  2026.09.25
 !
 !> Created
 !  2026.06.15
@@ -416,159 +416,104 @@ SUBROUTINE evaluate_multipole (self)
     REAL(pf) :: pm, px, py, pz
     REAL(pf) :: dxi, dyi, dzi
 
-    INTEGER :: level, counter, d, d_idx
+    INTEGER  :: d, d_idx
     REAL(pf) :: x_sd, y_sd, z_sd
-
-    INTEGER :: queue_current(self % number_of_nodes), queue_next(self % number_of_nodes)
-    INTEGER :: kqc, keqc, keqn, remaining
 
     ! multipole state vectors
     self % ns_quad = 0.0_pf
     IF (self % multipole > 4) self % ns_oct  = 0.0_pf
 
-    ! if the max depth was reached, we start at the deepest level
-    IF (self % most_depth == self % max_depth) THEN
-        level = self % most_depth
-
-    ! if no, we can start at the almost depth because the lower only will have leafs
-    ELSE
-        level = self % most_depth - 1
-    ENDIF
-    counter = 0
-    
-    keqc = self % number_of_nodes ! key end queue current
-    keqn = 0 ! key end queue next
-    kqc = 0  ! key queue current
-
-    ! start by the last node
-    queue_current = [(self % number_of_nodes - i + 1, i=1, self%number_of_nodes)]
-
-    DO WHILE (level >= 0)
-        
-        kqc = kqc + 1
-        node_idx = queue_current(kqc)
-
-        ! if isnt in the level, get the next
-        IF (self % ns_depth(node_idx) < level) THEN
-            keqn = keqn + 1
-            queue_next(keqn) = node_idx
+    DO node_idx = self % number_of_nodes, 1, -1
+        ! if its a leaf, it doesnt have contributions
+        IF (self % ns_type(node_idx) == 1) THEN
             CYCLE
-
-        ! if its in the level, evaluate
-        ELSE IF (self % ns_depth(node_idx) == level) THEN
-            counter = counter + 1
-            IF (counter == self % counter_for_each_level(level+1)) THEN
-                level = level - 1
-                counter = 0
-                remaining = keqc - kqc
-
-                IF (level >= 0) THEN
-                    IF (kqc < keqc) THEN
-                        queue_current(1:remaining) = queue_current(kqc+1:keqc)
-                        queue_current(remaining+1:remaining+keqn) = queue_next(1:keqn)
-                        keqc = remaining + keqn
-                    ELSE
-                        queue_current(1:keqn) = queue_next(1:keqn)
-                        keqc = keqn
-                    ENDIF
-                ENDIF
-
-                keqn = 0
-                kqc = 0
-            ENDIF
-
-            ! if its a leaf, it doesnt have contributions
-            IF (self % ns_type(node_idx) == 1) THEN
-                CYCLE
-            ENDIF
-
-            ! if its a twig but it is in the deepest level, it doesnt have contributions also
-            IF (self % ns_depth(node_idx) == self % max_depth) THEN
-                CYCLE
-            ENDIF
-
-            ! if its a twig, we need to avaliate the daughters
-            DO d = 1, 8
-                d_idx = self % ns_child(node_idx, d)
-                IF (d_idx == -1) CYCLE
-
-                pm = self % ns_mass(d_idx)
-                px = self % ns_qcm_x(d_idx)
-                py = self % ns_qcm_y(d_idx)
-                pz = self % ns_qcm_z(d_idx)
-
-                dxi = px - self % ns_qcm_x(node_idx)
-                dyi = py - self % ns_qcm_y(node_idx)
-                dzi = pz - self % ns_qcm_z(node_idx)
-
-                ! if its a twig, first add its contribution
-                IF (self % ns_type(d_idx) == 2) THEN
-                    self % ns_quad(node_idx,:) = self % ns_quad(node_idx,:) + self % ns_quad(d_idx,:)
-                    IF (self % multipole > 4) THEN
-                        self % ns_oct(node_idx,:) = self % ns_oct(node_idx,:) + self % ns_oct(d_idx,:)
-                    ENDIF
-                ENDIF
-
-                self % ns_quad(node_idx, 1) = self % ns_quad(node_idx, 1) + pm * dxi**2    ! mxi2
-                self % ns_quad(node_idx, 2) = self % ns_quad(node_idx, 2) + pm * dyi**2    ! myi2
-                self % ns_quad(node_idx, 3) = self % ns_quad(node_idx, 3) + pm * dzi**2    ! mzi2
-                self % ns_quad(node_idx, 4) = self % ns_quad(node_idx, 4) + pm * dxi * dyi ! mxyi
-                self % ns_quad(node_idx, 5) = self % ns_quad(node_idx, 5) + pm * dxi * dzi ! mxzi
-                self % ns_quad(node_idx, 6) = self % ns_quad(node_idx, 6) + pm * dyi * dzi ! myzi
-
-                IF (self % multipole > 4) THEN
-                    self % ns_oct(node_idx, 1) = self % ns_oct(node_idx, 1) + pm * dxi * dxi**2
-                    self % ns_oct(node_idx, 2) = self % ns_oct(node_idx, 2) + pm * dxi * dyi**2
-                    self % ns_oct(node_idx, 3) = self % ns_oct(node_idx, 3) + pm * dxi * dzi**2
-
-                    self % ns_oct(node_idx, 4) = self % ns_oct(node_idx, 4) + pm * dyi * dxi**2
-                    self % ns_oct(node_idx, 5) = self % ns_oct(node_idx, 5) + pm * dyi * dyi**2
-                    self % ns_oct(node_idx, 6) = self % ns_oct(node_idx, 6) + pm * dyi * dzi**2
-                    
-                    self % ns_oct(node_idx, 7) = self % ns_oct(node_idx, 7) + pm * dzi * dxi**2
-                    self % ns_oct(node_idx, 8) = self % ns_oct(node_idx, 8) + pm * dzi * dyi**2
-                    self % ns_oct(node_idx, 9) = self % ns_oct(node_idx, 9) + pm * dzi * dzi**2
-                    
-                    self % ns_oct(node_idx, 10) = self % ns_oct(node_idx, 10) + pm * dxi * dyi * dzi
-                ENDIF
-
-                IF (self % multipole > 4 .AND. self % ns_type(d_idx) == 2) THEN
-                    self % ns_oct(node_idx, 1) = self % ns_oct(node_idx, 1) + &
-                        3.0_pf * dxi * self % ns_quad(d_idx, 1)
-                    self % ns_oct(node_idx, 2) = self % ns_oct(node_idx, 2) + &
-                        2.0_pf * dyi * self % ns_quad(d_idx, 4) + dxi * self % ns_quad(d_idx, 2)
-                    self % ns_oct(node_idx, 3) = self % ns_oct(node_idx, 3) + &
-                        2.0_pf * dzi * self % ns_quad(d_idx, 5) + dxi * self % ns_quad(d_idx, 3)
-
-                    self % ns_oct(node_idx, 4) = self % ns_oct(node_idx, 4) + &
-                        2.0_pf * dxi * self % ns_quad(d_idx, 4) + dyi * self % ns_quad(d_idx, 1)
-                    self % ns_oct(node_idx, 5) = self % ns_oct(node_idx, 5) + &
-                        3.0_pf * dyi * self % ns_quad(d_idx, 2)
-                    self % ns_oct(node_idx, 6) = self % ns_oct(node_idx, 6) + &
-                        2.0_pf * dzi * self % ns_quad(d_idx, 6) + dyi * self % ns_quad(d_idx, 3)
-
-                    self % ns_oct(node_idx, 7) = self % ns_oct(node_idx, 7) + &
-                        2.0_pf * dxi * self % ns_quad(d_idx, 5) + dzi * self % ns_quad(d_idx, 1)
-                    self % ns_oct(node_idx, 8) = self % ns_oct(node_idx, 8) + &
-                        2.0_pf * dyi * self % ns_quad(d_idx, 6) + dzi * self % ns_quad(d_idx, 2)
-                    self % ns_oct(node_idx, 9) = self % ns_oct(node_idx, 9) + &
-                        3.0_pf * dzi * self % ns_quad(d_idx, 3)
-
-                    self % ns_oct(node_idx, 10) = self % ns_oct(node_idx, 10) + &
-                        dxi * self % ns_quad(d_idx, 6) + &
-                        dyi * self % ns_quad(d_idx, 5) + &
-                        dzi * self % ns_quad(d_idx, 4)
-                ENDIF
-            END DO
-
-            IF (self % multipole > 4) THEN
-                self % ns_oct(node_idx, 11) = SUM(self % ns_oct(node_idx, 1:10))
-                self % ns_oct(node_idx, 12) = SUM(self % ns_oct(node_idx, 1:3))
-                self % ns_oct(node_idx, 13) = SUM(self % ns_oct(node_idx, 4:6))
-                self % ns_oct(node_idx, 14) = SUM(self % ns_oct(node_idx, 7:9))
-            ENDIF
         ENDIF
 
+        ! if its a twig but it is in the deepest level, it doesnt have contributions also
+        IF (self % ns_depth(node_idx) == self % max_depth) THEN
+            CYCLE
+        ENDIF
+
+        ! if its a twig, we need to avaliate the daughters
+        DO d = 1, 8
+            d_idx = self % ns_child(node_idx, d)
+            IF (d_idx == -1) CYCLE
+
+            pm = self % ns_mass(d_idx)
+            px = self % ns_qcm_x(d_idx)
+            py = self % ns_qcm_y(d_idx)
+            pz = self % ns_qcm_z(d_idx)
+
+            dxi = px - self % ns_qcm_x(node_idx)
+            dyi = py - self % ns_qcm_y(node_idx)
+            dzi = pz - self % ns_qcm_z(node_idx)
+
+            ! if its a twig, first add its contribution
+            IF (self % ns_type(d_idx) == 2) THEN
+                self % ns_quad(node_idx,:) = self % ns_quad(node_idx,:) + self % ns_quad(d_idx,:)
+                IF (self % multipole > 4) THEN
+                    self % ns_oct(node_idx,:) = self % ns_oct(node_idx,:) + self % ns_oct(d_idx,:)
+                ENDIF
+            ENDIF
+
+            self % ns_quad(node_idx, 1) = self % ns_quad(node_idx, 1) + pm * dxi**2    ! mxi2
+            self % ns_quad(node_idx, 2) = self % ns_quad(node_idx, 2) + pm * dyi**2    ! myi2
+            self % ns_quad(node_idx, 3) = self % ns_quad(node_idx, 3) + pm * dzi**2    ! mzi2
+            self % ns_quad(node_idx, 4) = self % ns_quad(node_idx, 4) + pm * dxi * dyi ! mxyi
+            self % ns_quad(node_idx, 5) = self % ns_quad(node_idx, 5) + pm * dxi * dzi ! mxzi
+            self % ns_quad(node_idx, 6) = self % ns_quad(node_idx, 6) + pm * dyi * dzi ! myzi
+
+            IF (self % multipole > 4) THEN
+                self % ns_oct(node_idx, 1) = self % ns_oct(node_idx, 1) + pm * dxi * dxi**2
+                self % ns_oct(node_idx, 2) = self % ns_oct(node_idx, 2) + pm * dxi * dyi**2
+                self % ns_oct(node_idx, 3) = self % ns_oct(node_idx, 3) + pm * dxi * dzi**2
+
+                self % ns_oct(node_idx, 4) = self % ns_oct(node_idx, 4) + pm * dyi * dxi**2
+                self % ns_oct(node_idx, 5) = self % ns_oct(node_idx, 5) + pm * dyi * dyi**2
+                self % ns_oct(node_idx, 6) = self % ns_oct(node_idx, 6) + pm * dyi * dzi**2
+                
+                self % ns_oct(node_idx, 7) = self % ns_oct(node_idx, 7) + pm * dzi * dxi**2
+                self % ns_oct(node_idx, 8) = self % ns_oct(node_idx, 8) + pm * dzi * dyi**2
+                self % ns_oct(node_idx, 9) = self % ns_oct(node_idx, 9) + pm * dzi * dzi**2
+                
+                self % ns_oct(node_idx, 10) = self % ns_oct(node_idx, 10) + pm * dxi * dyi * dzi
+            ENDIF
+
+            IF (self % multipole > 4 .AND. self % ns_type(d_idx) == 2) THEN
+                self % ns_oct(node_idx, 1) = self % ns_oct(node_idx, 1) + &
+                    3.0_pf * dxi * self % ns_quad(d_idx, 1)
+                self % ns_oct(node_idx, 2) = self % ns_oct(node_idx, 2) + &
+                    2.0_pf * dyi * self % ns_quad(d_idx, 4) + dxi * self % ns_quad(d_idx, 2)
+                self % ns_oct(node_idx, 3) = self % ns_oct(node_idx, 3) + &
+                    2.0_pf * dzi * self % ns_quad(d_idx, 5) + dxi * self % ns_quad(d_idx, 3)
+
+                self % ns_oct(node_idx, 4) = self % ns_oct(node_idx, 4) + &
+                    2.0_pf * dxi * self % ns_quad(d_idx, 4) + dyi * self % ns_quad(d_idx, 1)
+                self % ns_oct(node_idx, 5) = self % ns_oct(node_idx, 5) + &
+                    3.0_pf * dyi * self % ns_quad(d_idx, 2)
+                self % ns_oct(node_idx, 6) = self % ns_oct(node_idx, 6) + &
+                    2.0_pf * dzi * self % ns_quad(d_idx, 6) + dyi * self % ns_quad(d_idx, 3)
+
+                self % ns_oct(node_idx, 7) = self % ns_oct(node_idx, 7) + &
+                    2.0_pf * dxi * self % ns_quad(d_idx, 5) + dzi * self % ns_quad(d_idx, 1)
+                self % ns_oct(node_idx, 8) = self % ns_oct(node_idx, 8) + &
+                    2.0_pf * dyi * self % ns_quad(d_idx, 6) + dzi * self % ns_quad(d_idx, 2)
+                self % ns_oct(node_idx, 9) = self % ns_oct(node_idx, 9) + &
+                    3.0_pf * dzi * self % ns_quad(d_idx, 3)
+
+                self % ns_oct(node_idx, 10) = self % ns_oct(node_idx, 10) + &
+                    dxi * self % ns_quad(d_idx, 6) + &
+                    dyi * self % ns_quad(d_idx, 5) + &
+                    dzi * self % ns_quad(d_idx, 4)
+            ENDIF
+        END DO
+
+        IF (self % multipole > 4) THEN
+            self % ns_oct(node_idx, 11) = SUM(self % ns_oct(node_idx, 1:10))
+            self % ns_oct(node_idx, 12) = SUM(self % ns_oct(node_idx, 1:3))
+            self % ns_oct(node_idx, 13) = SUM(self % ns_oct(node_idx, 4:6))
+            self % ns_oct(node_idx, 14) = SUM(self % ns_oct(node_idx, 7:9))
+        ENDIF
     END DO
 END SUBROUTINE
 
