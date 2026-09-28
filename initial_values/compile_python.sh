@@ -1,1 +1,1 @@
-python -m numpy.f2py -c -m api initial_values.f90
+python -m numpy.f2py -c -m api initial_values.f90 plummer.f90 hernquist.f90 homogeneous.f90

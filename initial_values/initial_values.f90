@@ -3,10 +3,22 @@
 !
 !> Objectives
 !  This module provides routines to generate random initial
-!  values.
+!  values. The available density profiles are:
+!   - uniform / uniform_cubic (default)
+!   - uniform_spherical
+!   - homogeneous_sphere
+!   - plummer   (Plummer, 1911)
+!   - hernquist (Hernquist, 1990)
+!
+!  The velocities are sampled using p(v|r) \propto v^2 f, where
+!  f can be an ergodic distribution function (if the systems
+!  are isotropic) or other distribution function. The available
+!  options for this are. For the Plummer and the Hernquist we
+!  sample isotropic velocities, and the velocities are radially
+!  uniform for the others.
 !
 !> Modified
-!  2026.09.24
+!  2026.09.28
 !
 !> Created
 !  2026.07.28
@@ -15,6 +27,9 @@
 !  oap
 !
 MODULE initial_values_mod
+    USE iv_plummer_mod
+    USE iv_homogeneous_sphere_mod
+    USE iv_hernquist_mod
     IMPLICIT NONE
     PUBLIC generate_initial_values, api
     PRIVATE
@@ -30,7 +45,7 @@ SUBROUTINE api (size_qs, size_ps, nm, td, pr, pp, m, qs, ps)
     REAL(8),          INTENT(IN) :: pp(:) ! profile parameters
     REAL(8), INTENT(INOUT) :: m(:), qs(:,:), ps(:,:)
 
-    CALL generate_initial_values (SIZE(m), m, qs, ps, size_qs, size_ps, nm, td, pr, pp)
+    CALL generate_initial_values(SIZE(m), m, qs, ps, size_qs, size_ps, nm, td, pr, pp)
 END SUBROUTINE
 
 SUBROUTINE generate_initial_values (N, m, qs, ps, size_qs, size_ps, nm, td, pr, pp)
@@ -41,45 +56,90 @@ SUBROUTINE generate_initial_values (N, m, qs, ps, size_qs, size_ps, nm, td, pr, 
     CHARACTER(LEN=*), INTENT(IN), OPTIONAL :: pr ! mass profile
     REAL(8), INTENT(IN), OPTIONAL         :: pp(:) ! profile parameters
     REAL(8), INTENT(INOUT) :: m(N), qs(3,N), ps(3,N)
+    REAL(8) :: r(N), vr(N) ! radius and radial velocities
 
-    REAL(8) :: tlm(3), com(3)
+    REAL(8) :: tlm(3), com(3), big_ps, max_ps(3)
     INTEGER :: p
 
-    CALL RANDOM_SEED()
+    ! the massas can be equal or no
+    IF (nm) THEN 
+        m = 1.0d0 / N
+    ELSE
+        CALL random_number(m)
+        DO WHILE (MINVAL(m) == 0.0d0)
+            CALL random_number(m)
+        END DO
+        m = m / SUM(m)
+    ENDIF
 
-    ! if profile not present, generate uniform
+    ! if profile not present, generate uniform (cubic)
     IF (.NOT. PRESENT(pr)) THEN
-        CALL generate_initial_values_uniform(N, m, qs, ps, size_qs, size_ps, nm, td)
+        CALL generate_initial_values_uniform(N, qs, ps, size_qs, size_ps)
         RETURN
     ENDIF
 
     SELECT CASE (TRIM(pr))
+        ! uniform (cubic), the velocities are cubic too
         CASE ("uniform")
-            CALL generate_initial_values_uniform(N, m, qs, ps, size_qs, size_ps, nm, td)
+            CALL generate_initial_values_uniform(N, qs, ps, size_qs, size_ps)
+
+        ! Uniform distribution of the radius, generating a uniform sphere.
+        ! The velocities are isotropic.
+        CASE ("uniform_sphere")
+            CALL generate_initial_values_uniform_spheric(N, r, vr, size_qs, size_ps)
+            CALL generate_cartesian_from_radius(N, r,  qs, td)
+            CALL generate_cartesian_from_radius(N, vr, ps, td)
         
+        ! Plummer sphere (Plummer 1911). The velocities are isotropic.
         CASE ("plummer")
             IF (.NOT. PRESENT(pp) .OR. SIZE(pp) .NE. 2) THEN
                 STOP "For the Plummer profile, it is necessary to set the parameters G and b."
             ENDIF
-            CALL generate_initial_values_plummer(N, m, qs, ps, size_qs, size_ps, nm, td, pp)
+            CALL generate_initial_values_plummer(N, r, vr, size_qs, pp)
+            CALL generate_cartesian_from_radius(N, r,  qs, td)
+            CALL generate_cartesian_from_radius(N, vr, ps, td)
 
+        ! Homogeneous sphere, with isotropic velocities.
         CASE ("homogeneous")
-            IF (.NOT. PRESENT(pp) .OR. SIZE(pp) .NE. 3) THEN
-                STOP "For the homogeneous sphere profile, it is necessary to set the parameters G, R and rho0."
+            IF (.NOT. PRESENT(pp) .OR. SIZE(pp) .NE. 2) THEN
+                STOP "For the homogeneous sphere profile, it is necessary to set the parameters G and R."
             ENDIF
-            CALL generate_initial_values_homogeneous_sphere(N, m, qs, ps, size_qs, size_ps, &
-                                                            nm, td, pp)
-        
+            CALL generate_initial_values_homogeneous_sphere(N, r, vr, size_qs, size_ps, pp)
+            CALL generate_cartesian_from_radius(N, r,  qs, td)
+            CALL generate_cartesian_from_radius(N, vr, ps, td)
+
+        ! Hernquist model (Hernquist 1990), with isotropic velocities
         CASE ("hernquist")
             IF (.NOT. PRESENT(pp) .OR. SIZE(pp) .NE. 2) THEN
                 STOP "For the Hernquist sphere profile, it is necessary to set the parameters G and a"
             ENDIF
-            CALL generate_initial_values_hernquist_isotropic(N, m, qs, ps, size_qs, size_ps, &
-                                                            nm, td, pp)
+            CALL generate_initial_values_hernquist_isotropic(N, r, vr, size_qs, pp)
+            CALL generate_cartesian_from_radius(N, r,  qs, td)
+            CALL generate_cartesian_from_radius(N, vr, ps, td)
 
         CASE DEFAULT
             STOP 'Unknow density profile: "'//TRIM(pr)//'"'
     END SELECT
+
+    IF (size_ps >= 0) THEN
+        max_ps(1) = MAXVAL(ABS(ps(1,:)))
+        max_ps(2) = MAXVAL(ABS(ps(2,:)))
+        max_ps(3) = MAXVAL(ABS(ps(3,:)))
+        big_ps = MAXVAL(max_ps)
+
+        IF (big_ps > size_ps) ps = ps * size_ps / big_ps
+    ENDIF
+
+    !> 2d
+    IF (td) THEN
+        ps(3,:) = 0.0d0
+        qs(3,:) = 0.0d0
+    ENDIF
+
+    ! velocities to momentum
+    DO p = 1, N
+        ps(:,p) = ps(:,p) * m(p)
+    END DO
 
     ! total linear momentum -> 0
     tlm(1) = sum(ps(1,:))/N
@@ -101,315 +161,212 @@ SUBROUTINE generate_initial_values (N, m, qs, ps, size_qs, size_ps, nm, td, pr, 
     END DO
 END SUBROUTINE
 
-SUBROUTINE generate_initial_values_uniform (N, m, qs, ps, size_qs, size_ps, nm, two_dim)
+SUBROUTINE generate_initial_values_uniform (N, qs, ps, size_qs, size_ps)
 ! Generates random initial values with uniform distribution (positions
 ! and momenta). The masses can be 1/N if nm == .TRUE. or uniformly
 ! distributed with M = 1.
-    INTEGER,  INTENT(IN) :: N
-    REAL(8), INTENT(IN) :: size_qs, size_ps
-    LOGICAL,  INTENT(IN) :: nm, two_dim
-    REAL(8), INTENT(INOUT) :: m(N), qs(3,N), ps(3,N)
-
-    CALL random_seed()
-
-    ! normalized masses
-    IF (nm) THEN
-        m = 1.0d0 / N
-    ELSE
-        CALL random_number(m)
-        DO WHILE (MINVAL(m) == 0.0d0)
-            CALL random_number(m)
-        END DO
-        m = m / SUM(m)
-    ENDIF
+    INTEGER, INTENT(IN)    :: N
+    REAL(8), INTENT(IN)    :: size_qs, size_ps
+    REAL(8), INTENT(INOUT) :: qs(3,N), ps(3,N)
 
     CALL random_number(qs)
     qs = size_qs * (2.0d0 * qs - 1.0d0)
 
     CALL random_number(ps)
     ps = size_ps * (2.0d0 * ps - 1.0d0)
-
-    IF (two_dim) THEN
-        qs(3,:) = 0.0d0
-        ps(3,:) = 0.0d0
-    ENDIF
 END SUBROUTINE
 
-SUBROUTINE generate_initial_values_plummer (N, m, qs, ps, size_qs, size_ps, nm, td, pars)
+SUBROUTINE generate_initial_values_uniform_spheric (N, r, vr, size_qs, size_ps)
+! Generates random radius with uniform distribution. The masses can 
+! be 1/N if nm == .TRUE. or uniformly distributed with M = 1.
+    INTEGER, INTENT(IN)    :: N
+    REAL(8), INTENT(IN)    :: size_qs, size_ps
+    REAL(8), INTENT(INOUT) :: r(N), vr(N)
+
+    CALL random_number(r)
+    r = size_qs * (2.0d0 * r - 1.0d0)
+
+    CALL random_number(vr)
+    vr = size_ps * (2.0d0 * vr - 1.0d0)
+END SUBROUTINE
+
+SUBROUTINE generate_initial_values_plummer (N, r, vr, size_qs, pars)
 ! Generates random initial values with Plummer density and isotropic velocities. 
 ! The masses can be 1/N if nm == .TRUE. or uniformly distributed with M = 1.
-    INTEGER,  INTENT(IN) :: N
-    LOGICAL,  INTENT(IN) :: nm, td ! normalized masses, two dimensional
-    REAL(8), INTENT(IN) :: pars(2) ! G and plummer parameter
-    REAL(8), INTENT(IN) :: size_qs, size_ps
-    REAL(8), INTENT(INOUT) :: m(N), qs(3,N), ps(3,N)
+    INTEGER, INTENT(IN)    :: N
+    REAL(8), INTENT(IN)    :: pars(2) ! G and plummer parameter
+    REAL(8), INTENT(IN)    :: size_qs
+    REAL(8), INTENT(INOUT) :: r(N), vr(N)
 
-    REAL(8) :: X1, X2(N), X3(N)
-    REAL(8) :: r(N), phi(N), cos_theta(N), sin_theta(N)
+    REAL(8) :: X
     
     INTEGER  :: i
-    REAL(8) :: plummer_potential, v_escape(N)
+    REAL(8) :: potential, v_escape
     REAL(8) :: G, plupar
-    REAL(8) :: max_ps(3), big_ps
-
-    REAL(8) :: v, v_phi, v_cos_theta, v_sin_theta
-    REAL(8) :: qvn, yvn
+    REAL(8) :: qvn, yvn, edf, maximum
 
     ! parameters
     G = pars(1)
     plupar = pars(2)
 
-    CALL random_seed()
-
-    !> MASSES
-    !  m = 1/N
-        m = 1.0d0 / N
-
     !> POSITIONS
-    !  Inverting the cumulative distribution function P to get r = P(u), u \sim U[0,1]
-        i = 1
-        DO WHILE (i <= N)
-            ! uniformly distributed values
-            CALL random_number(X1)
+    i = 1
+    DO WHILE (i <= N)
+        ! uniformly distributed values
+        CALL random_number(X)
 
-            ! apply P^-1(u) = r
-            r(i) = X1**(1.0d0/3.0d0) * plupar / (SQRT(1.0d0 - X1**(2.0d0/3.0d0)))
-            IF (size_qs >= 0 .AND. r(i) > size_qs) CYCLE
-
-            i = i + 1
-        END DO
-
-        ! phi angle variables
-        CALL random_number(X2)
-        phi = 2.0d0 * PI * X2
-
-        ! theta angle variables
-        ! if two dimensional, theta = PI
-        IF (td) THEN
-            cos_theta = 0.0d0
-            sin_theta = 1.0d0
-        ELSE
-            CALL random_number(X3)
-            cos_theta = 2.0d0 * X3 - 1.0d0
-            sin_theta = SQRT(1.0d0 - cos_theta*cos_theta)
-        ENDIF
-
-        ! now evaluate the positions
-        qs(1,:) = r * sin_theta * COS(phi)
-        qs(2,:) = r * sin_theta * SIN(phi)
-        qs(3,:) = r * cos_theta
+        ! apply P^-1(u) = r
+        ! r(i) = X**(1.0d0/3.0d0) * plupar / (SQRT(1.0d0 - X**(2.0d0/3.0d0)))
+        r(i) = plummer_inverse_P(X, pars)
+        
+        IF (size_qs >= 0 .AND. r(i) > size_qs) CYCLE
+        i = i + 1
+    END DO
 
     !> MOMENTA
-    !  By von Neumann rejection
-        ! first we evaluate the escape velocities
-        DO i = 1, N
-            plummer_potential = - G * 1.0d0 / SQRT(r(i)**2 + plupar**2)
-            v_escape(i) = SQRT(-2.0d0 * plummer_potential)
+    DO i = 1, N
+        ! potential = - G * 1.0d0 / SQRT(r(i)**2 + plupar**2)
+        potential = plummer_potential(r(i), pars)
+        v_escape = SQRT(-2.0d0 * potential)
+        ! maximum = 0.1d0
+        maximum = plummer_maximum_pdf()
 
-            von_neumann: DO WHILE (.TRUE.)
-                CALL random_number(qvn)
-                CALL random_number(yvn)
-                yvn = 0.1d0 * yvn
+        von_neumann: DO WHILE (.TRUE.)
+            CALL random_number(qvn)
+            CALL random_number(yvn)
+            yvn = maximum * yvn
 
-                IF (yvn < qvn*qvn*(1.0d0 - qvn*qvn)**(3.5d0)) EXIT von_neumann
-            END DO von_neumann
+            edf = plummer_edf_norm(qvn)
 
-            v = qvn * v_escape(i)
+            ! IF (yvn < qvn*qvn*(1.0d0 - qvn*qvn)**(3.5d0)) EXIT von_neumann
+            IF (yvn < qvn*qvn*edf) EXIT von_neumann
+        END DO von_neumann
 
-            CALL random_number(v_phi)
-            v_phi = 2.0d0 * PI * v_phi
-
-            IF (td) THEN
-                v_cos_theta = 0.0d0
-                v_sin_theta = 1.0d0
-            ELSE
-                CALL random_number(v_cos_theta)
-                v_cos_theta = 2.0d0 * v_cos_theta - 1.0d0
-                v_sin_theta = SQRT(1.0d0 - v_cos_theta**2)
-            ENDIF
-
-            ps(1,i) = m(i) * v * v_sin_theta * COS(v_phi)
-            ps(2,i) = m(i) * v * v_sin_theta * SIN(v_phi)
-            ps(3,i) = m(i) * v * v_cos_theta
-        END DO
-        IF (size_ps >= 0) THEN
-            max_ps(1) = MAXVAL(ABS(ps(1,:)))
-            max_ps(2) = MAXVAL(ABS(ps(2,:)))
-            max_ps(3) = MAXVAL(ABS(ps(3,:)))
-            big_ps = MAXVAL(max_ps)
-
-            IF (big_ps > size_ps) ps = ps * size_ps / big_ps
-        ENDIF
-
-    !> 2d
-    IF (td) THEN
-        ps(3,:) = 0.0d0
-        qs(3,:) = 0.0d0
-    ENDIF
+        vr(i) = qvn * v_escape
+    END DO
 END SUBROUTINE
 
-SUBROUTINE generate_initial_values_homogeneous_sphere (N, m, qs, ps, &
-            size_qs, size_ps, nm, td, pars)
-! Generates random initial values with homogeneous density and isotropic velocities.
+SUBROUTINE generate_initial_values_homogeneous_sphere (N, r, vr, size_qs, size_ps, pars)
+! Generates random initial values with homogeneous density and uniform velocities.
 ! The masses can be 1/N if nm == .TRUE. or uniformly distributed with M = 1.
-    INTEGER,  INTENT(IN) :: N
-    LOGICAL,  INTENT(IN) :: nm, td ! normalized masses, two dimensional
-    REAL(8), INTENT(IN) :: pars(3) ! G, R and rho0
-    REAL(8), INTENT(IN) :: size_qs, size_ps
-    REAL(8), INTENT(INOUT) :: m(N), qs(3,N), ps(3,N)
+    INTEGER, INTENT(IN)    :: N
+    REAL(8), INTENT(IN)    :: pars(2) ! G, R
+    REAL(8), INTENT(IN)    :: size_qs, size_ps
+    REAL(8), INTENT(INOUT) :: r(N), vr(N)
 
-    REAL(8) :: X1, X2(N), X3(N)
-    REAL(8) :: r(N), phi(N), cos_theta(N), sin_theta(N)
-    
+    REAL(8) :: X
     INTEGER  :: i
-    REAL(8) :: potential, v_escape(N)
-    REAL(8) :: G, Rpar, rho0par ! parameters of the profile
-    REAL(8) :: max_ps(3), big_ps
-
-    ! parameters
-    G = pars(1)
-    Rpar = pars(2)
-    rho0par = pars(3)
-
-    CALL random_seed()
-
-    !> MASSES
-    !  m = 1/N
-        m = 1.0d0 / N
 
     !> POSITIONS
-    !  Inverting the cumulative distribution function P to get r = P(u), u \sim U[0,1]
-        i = 1
-        DO WHILE (i <= N)
-            ! uniformly distributed values
-            CALL random_number(X1)
+    i = 1
+    DO WHILE (i <= N)
+        ! uniformly distributed values
+        CALL random_number(X)
 
-            ! apply P^-1(u) = r
-            r(i) = Rpar * X1 ** (1./3.)
-            IF (size_qs >= 0 .AND. r(i) > size_qs) CYCLE
+        ! apply P^-1(u) = r
+        r(i) = homogeneous_sphere_inverse_P(x, pars)
+        IF (size_qs >= 0 .AND. r(i) > size_qs) CYCLE
 
-            i = i + 1
-        END DO
-
-        ! phi angle variables
-        CALL random_number(X2)
-        phi = 2.0d0 * PI * X2
-
-        ! theta angle variables
-        ! if two dimensional, theta = PI
-        IF (td) THEN
-            cos_theta = 0.0d0
-            sin_theta = 1.0d0
-        ELSE
-            CALL random_number(X3)
-            cos_theta = 2.0d0 * X3 - 1.0d0
-            sin_theta = SQRT(1.0d0 - cos_theta*cos_theta)
-        ENDIF
-
-        ! now evaluate the positions
-        qs(1,:) = r * sin_theta * COS(phi)
-        qs(2,:) = r * sin_theta * SIN(phi)
-        qs(3,:) = r * cos_theta
+        i = i + 1
+    END DO
 
     !> MOMENTA
-    !  By von Neumann rejection
-        ! first we evaluate the escape velocities
-        DO i = 1, N
-            potential = (2.0d0 * PI * G * rho0par) / 3.0d0
-            IF (r(i) < Rpar) THEN
-                potential = potential * (r(i)**2 - 3.0d0 * Rpar**2)
-            ELSE
-                potential = - 2.0d0 * potential * (Rpar**3 / r(i))
-            ENDIF
-            v_escape(i) = SQRT(-2.0d0 * potential)
-
-            ! TODO
-        END DO
-
-    !> 2d
-    IF (td) THEN
-        ps(3,:) = 0.0d0
-        qs(3,:) = 0.0d0
-    ENDIF
+    CALL random_number(vr)
+    vr = size_ps * (2.0d0 * vr - 1.0d0)
 END SUBROUTINE
 
-SUBROUTINE generate_initial_values_hernquist_isotropic (N, m, qs, ps, &
-            size_qs, size_ps, nm, td, pars)
+SUBROUTINE generate_initial_values_hernquist_isotropic (N, r, vr, size_qs, pars)
 ! Generates random initial values with Hernquist density and isotropic velocities.
 ! The masses can be 1/N if nm == .TRUE. or uniformly distributed with M = 1.
-    INTEGER,  INTENT(IN) :: N
-    LOGICAL,  INTENT(IN) :: nm, td ! normalized masses, two dimensional
-    REAL(8), INTENT(IN) :: pars(3) ! G, R and rho0
-    REAL(8), INTENT(IN) :: size_qs, size_ps
-    REAL(8), INTENT(INOUT) :: m(N), qs(3,N), ps(3,N)
+    INTEGER, INTENT(IN)    :: N
+    REAL(8), INTENT(IN)    :: pars(3) ! G, R and rho0
+    REAL(8), INTENT(IN)    :: size_qs
+    REAL(8), INTENT(INOUT) :: r(N), vr(N)
 
-    REAL(8) :: X1, X2(N), X3(N)
-    REAL(8) :: r(N), phi(N), cos_theta(N), sin_theta(N)
+    REAL(8) :: X
     
-    INTEGER  :: i
-    REAL(8) :: potential, v_escape(N)
+    INTEGER :: i
+    REAL(8) :: potential, v_escape
     REAL(8) :: G, apar ! parameters of the profile
-    REAL(8) :: max_ps(3), big_ps
+
+    REAL(8) :: qvn, yvn
+    REAL(8) :: edf
+
+    INTEGER :: counter
+    REAL(8) :: max_qvn
 
     ! parameters
     G = pars(1)
     apar = pars(2)
 
-    CALL random_seed()
-
-    !> MASSES
-    !  m = 1/N
-        m = 1.0d0 / N
-
     !> POSITIONS
-    !  Inverting the cumulative distribution function P to get r = P(u), u \sim U[0,1]
-        i = 1
-        DO WHILE (i <= N)
-            ! uniformly distributed values
-            CALL random_number(X1)
+    i = 1
+    DO WHILE (i <= N)
+        ! uniformly distributed values
+        CALL random_number(X)
 
-            ! apply P^-1(u) = r
-            r(i) = apar * SQRT(X1)/(1.0d0 - SQRT(X1))
-            IF (size_qs >= 0 .AND. r(i) > size_qs) CYCLE
+        ! apply P^-1(u) = r
+        r(i) = hernquist_inverse_P(x, pars)
+        IF (size_qs >= 0 .AND. r(i) > size_qs) CYCLE
 
-            i = i + 1
-        END DO
-
-        ! phi angle variables
-        CALL random_number(X2)
-        phi = 2.0d0 * PI * X2
-
-        ! theta angle variables
-        ! if two dimensional, theta = PI
-        IF (td) THEN
-            cos_theta = 0.0d0
-            sin_theta = 1.0d0
-        ELSE
-            CALL random_number(X3)
-            cos_theta = 2.0d0 * X3 - 1.0d0
-            sin_theta = SQRT(1.0d0 - cos_theta*cos_theta)
-        ENDIF
-
-        ! now evaluate the positions
-        qs(1,:) = r * sin_theta * COS(phi)
-        qs(2,:) = r * sin_theta * SIN(phi)
-        qs(3,:) = r * cos_theta
+        i = i + 1
+    END DO
 
     !> MOMENTA
-    !  By von Neumann rejection
-        ! first we evaluate the escape velocities
-        DO i = 1, N
-            potential = - G/ (apar + r(i))
-            v_escape(i) = SQRT(-2.0d0 * potential)
+    DO i = 1, N
+        potential = hernquist_potential(r(i), pars)
+        v_escape = SQRT(-2.0d0 * potential)
 
-            ! TODO
-        END DO
-        
-    !> 2d
+        ! get the maximum of the distribution v^2 f(E)
+        max_qvn = hernquist_maximum_pdf(r(i), pars)
+
+        ! TODO
+        counter = 0
+        von_neumann: DO WHILE (.TRUE.)
+            CALL random_number(yvn)
+            IF (counter == 100) THEN
+                STOP "Too many attempts to sample with von Neumann, try again"
+            ENDIF
+            counter = counter + 1
+            CALL random_number(qvn)
+            yvn = max_qvn * yvn
+
+            edf = hernquist_edf_norm(r(i), qvn, pars)
+            ! print *, 'aqui: ', yvn,SQRT(-potential*(1- qvn**2)),  qvn*qvn*fE
+
+            IF (yvn < qvn*qvn*edf) EXIT von_neumann
+        END DO von_neumann
+
+        vr(i) = v_escape * qvn
+    END DO
+END SUBROUTINE
+
+SUBROUTINE generate_cartesian_from_radius (N, r, qs, td)
+    INTEGER, INTENT(IN)  :: N
+    REAL(8), INTENT(IN)  :: r(N)
+    REAL(8), INTENT(OUT) :: qs(3,N)
+    LOGICAL, INTENT(IN)  :: td ! 2d
+    REAL(8) :: X(N), phi(N), cos_theta(N), sin_theta(N)
+
+    ! phi angle variables
+    CALL random_number(X)
+    phi = 2.0d0 * PI * X
+
+    ! theta angle variables
+    ! if two dimensional, theta = PI
     IF (td) THEN
-        ps(3,:) = 0.0d0
-        qs(3,:) = 0.0d0
+        cos_theta = 0.0d0
+        sin_theta = 1.0d0
+    ELSE
+        CALL random_number(X)
+        cos_theta = 2.0d0 * X - 1.0d0
+        sin_theta = SQRT(1.0d0 - cos_theta*cos_theta)
     ENDIF
+
+    ! now the cartesian coordinates
+    qs(1,:) = r * sin_theta * COS(phi)
+    qs(2,:) = r * sin_theta * SIN(phi)
+    qs(3,:) = r * cos_theta
 END SUBROUTINE
 
 END MODULE
