@@ -7,7 +7,7 @@
 !  approximation with a quadrupole expansion.
 !
 !> Modified
-!  2026.09.25
+!  2026.10.05
 !
 !> Created
 !  2026.06.15
@@ -62,18 +62,25 @@ MODULE octree_mod
 
 CONTAINS
 
-SUBROUTINE init (self, m, x, y, z, multipole, save_txt)
+SUBROUTINE init (self, m, x, y, z, multipole, save_txt, mnn_par)
 ! this subroutine inits the tree by allocating the global vectors and adding each particle
 ! in a node. if its the case it saves the root in1formation too.
     CLASS(OctreeType), INTENT(INOUT) :: self
     REAL(pf), INTENT(IN) :: m(:), x(:), y(:), z(:)
     INTEGER, INTENT(IN) :: multipole
     INTEGER, OPTIONAL :: save_txt
+    INTEGER, OPTIONAL :: mnn_par ! max number of nodes
     REAL(pf) :: infos_root(4)
-    INTEGER :: p, idx_root
+    INTEGER :: p, idx_root, mnn
+
+    self % N = SIZE(m)
+    
+    mnn = 4 * self % N
+    IF (PRESENT(mnn_par)) then
+        mnn = mnn_par
+    ENDIF
 
     ! saving particles information
-    self % N = SIZE(m)
     ALLOCATE(self % m(self % N))
     ALLOCATE(self % x(self % N))
     ALLOCATE(self % y(self % N))
@@ -92,7 +99,7 @@ SUBROUTINE init (self, m, x, y, z, multipole, save_txt)
     self % multipole = multipole
 
     ! init the root
-    self % max_number_of_nodes = 8 * self % N
+    self % max_number_of_nodes = mnn
     self % number_of_nodes = 0
     CALL self % allocate_nodes()
     
@@ -129,106 +136,31 @@ SUBROUTINE allocate_nodes (self)
     INTEGER, ALLOCATABLE :: temp_int(:), temp_int_2(:,:)
     INTEGER :: old_size, new_size
 
-    ! if the tree already exists, so is the case of reallocation
-    IF (self % number_of_nodes > 0) THEN
-        old_size = self % max_number_of_nodes
-        self % max_number_of_nodes = 2 * old_size
-        new_size = self % max_number_of_nodes
-        
-        ! allocate the temp vectors
-        ALLOCATE(temp_real(old_size))
-        ALLOCATE(temp_int(old_size))
-        ALLOCATE(temp_int_2(old_size,8))
+    ALLOCATE(self % ns_cx(self % max_number_of_nodes))
+    ALLOCATE(self % ns_cy(self % max_number_of_nodes))
+    ALLOCATE(self % ns_cz(self % max_number_of_nodes))
+    ALLOCATE(self % ns_halfside(self % max_number_of_nodes))
+    ALLOCATE(self % ns_L2(self % max_number_of_nodes))
+    ALLOCATE(self % ns_mass(self % max_number_of_nodes))
+    ALLOCATE(self % ns_qcm_x(self % max_number_of_nodes))
+    ALLOCATE(self % ns_qcm_y(self % max_number_of_nodes))
+    ALLOCATE(self % ns_qcm_z(self % max_number_of_nodes))
+    ALLOCATE(self % ns_particle(self % max_number_of_nodes))
+    ALLOCATE(self % ns_type(self % max_number_of_nodes))
+    self % ns_type = 0
+    ALLOCATE(self % ns_depth(self % max_number_of_nodes))
+    ALLOCATE(self % ns_child(self % max_number_of_nodes, 8))
 
-        ! now deallocate and reallocate
-        temp_real = self % ns_cx
-        DEALLOCATE(self % ns_cx)
-        ALLOCATE(self % ns_cx(new_size))
-        self % ns_cx(1:old_size) = temp_real
+    ! quadrupole
+    IF (self % multipole > 1) THEN
+        ALLOCATE(self % ns_quad(self % max_number_of_nodes, 6))
+        self % ns_quad = 0.0_pf
+    ENDIF
 
-        temp_real = self % ns_cy
-        DEALLOCATE(self % ns_cy)
-        ALLOCATE(self % ns_cy(new_size))
-        self % ns_cy(1:old_size) = temp_real
-
-        temp_real = self % ns_cz
-        DEALLOCATE(self % ns_cz)
-        ALLOCATE(self % ns_cz(new_size))
-        self % ns_cz(1:old_size) = temp_real
-
-        temp_real = self % ns_halfside
-        DEALLOCATE(self % ns_halfside)
-        ALLOCATE(self % ns_halfside(new_size))
-        self % ns_halfside(1:old_size) = temp_real
-
-        temp_real = self % ns_L2
-        DEALLOCATE(self % ns_L2)
-        ALLOCATE(self % ns_L2(new_size))
-        self % ns_L2(1:old_size) = temp_real
-
-        temp_real = self % ns_mass
-        DEALLOCATE(self % ns_mass)
-        ALLOCATE(self % ns_mass(new_size))
-        self % ns_mass(1:old_size) = temp_real
-
-        temp_real = self % ns_qcm_x
-        DEALLOCATE(self % ns_qcm_x)
-        ALLOCATE(self % ns_qcm_x(new_size))
-        self % ns_qcm_x(1:old_size) = temp_real
-
-        temp_real = self % ns_qcm_y
-        DEALLOCATE(self % ns_qcm_y)
-        ALLOCATE(self % ns_qcm_y(new_size))
-        self % ns_qcm_y(1:old_size) = temp_real
-
-        temp_real = self % ns_qcm_z
-        DEALLOCATE(self % ns_qcm_z)
-        ALLOCATE(self % ns_qcm_z(new_size))
-        self % ns_qcm_z(1:old_size) = temp_real
-
-        temp_int = self % ns_particle
-        DEALLOCATE(self % ns_particle)
-        ALLOCATE(self % ns_particle(new_size))
-        self % ns_particle(1:old_size) = temp_int
-
-        temp_int = self % ns_type
-        DEALLOCATE(self % ns_type)
-        ALLOCATE(self % ns_type(new_size))
-        self % ns_type(1:old_size) = temp_int
-        
-        temp_int_2 = self % ns_child
-        DEALLOCATE(self % ns_child)
-        ALLOCATE(self % ns_child(new_size, 8))
-        self % ns_child(1:old_size,:) = temp_int_2
-
-        DEALLOCATE(temp_real, temp_int, temp_int_2)
-    ELSE
-        ALLOCATE(self % ns_cx(self % max_number_of_nodes))
-        ALLOCATE(self % ns_cy(self % max_number_of_nodes))
-        ALLOCATE(self % ns_cz(self % max_number_of_nodes))
-        ALLOCATE(self % ns_halfside(self % max_number_of_nodes))
-        ALLOCATE(self % ns_L2(self % max_number_of_nodes))
-        ALLOCATE(self % ns_mass(self % max_number_of_nodes))
-        ALLOCATE(self % ns_qcm_x(self % max_number_of_nodes))
-        ALLOCATE(self % ns_qcm_y(self % max_number_of_nodes))
-        ALLOCATE(self % ns_qcm_z(self % max_number_of_nodes))
-        ALLOCATE(self % ns_particle(self % max_number_of_nodes))
-        ALLOCATE(self % ns_type(self % max_number_of_nodes))
-        self % ns_type = 0
-        ALLOCATE(self % ns_depth(self % max_number_of_nodes))
-        ALLOCATE(self % ns_child(self % max_number_of_nodes, 8))
-
-        ! quadrupole
-        IF (self % multipole > 1) THEN
-            ALLOCATE(self % ns_quad(self % max_number_of_nodes, 6))
-            self % ns_quad = 0.0_pf
-        ENDIF
-
-        ! octupole
-        IF (self % multipole > 4) THEN
-            ALLOCATE(self % ns_oct(self % max_number_of_nodes, 14))
-            self % ns_oct = 0.0_pf
-        ENDIF
+    ! octupole
+    IF (self % multipole > 4) THEN
+        ALLOCATE(self % ns_oct(self % max_number_of_nodes, 14))
+        self % ns_oct = 0.0_pf
     ENDIF
 END SUBROUTINE
 
@@ -266,8 +198,8 @@ SUBROUTINE add_node (self, cx, cy, cz, side, depth, idx)
     idx = self % number_of_nodes
     
     IF (idx > self % max_number_of_nodes) THEN
-        CALL self % allocate_nodes()
-        PRINT *, '[DEBUG] REALLOCATING!'
+        PRINT *, "INSUFFICIENT NUMBER OF NODES: ", self % max_number_of_nodes
+        STOP 0
     END IF
 
     ! starts without children and being a leaf
