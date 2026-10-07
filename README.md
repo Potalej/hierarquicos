@@ -1,6 +1,6 @@
 # hierarquicos
 
-Estudo de métodos hierárquicos para N-corpos. Para começar, estou mexendo com Barnes-Hut.
+Estudo de métodos hierárquicos para N-corpos. Para começar, estou mexendo com Barnes-Hut. Agora implementei o Dehnen também!
 
 # Barnes-Hut
 

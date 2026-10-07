@@ -50,17 +50,17 @@ SUBROUTINE test_mcmillan_aarseth_results ()
     ! tests
     print *, '# monopole'
     OPEN(file, file = TRIM(out_dir)//"test_monopole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 1)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 10)
     CLOSE(file)
 
     print *, '# quadrupole'
     OPEN(file, file = TRIM(out_dir)//"test_quadrupole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 4)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 11)
     CLOSE(file)
 
     print *, '# octupole'
     OPEN(file, file = TRIM(out_dir)//"test_octupole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 8)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 12)
     CLOSE(file)
 END SUBROUTINE
 
@@ -94,17 +94,17 @@ SUBROUTINE test_multipoles_bigger_N ()
     ! tests
     print *, '# monopole'
     OPEN(file, file = TRIM(out_dir)//"test_monopole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 1)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 10)
     CLOSE(file)
 
     print *, '# quadrupole'
     OPEN(file, file = TRIM(out_dir)//"test_quadrupole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 4)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 11)
     CLOSE(file)
 
     print *, '# octupole'
     OPEN(file, file = TRIM(out_dir)//"test_octupole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 8)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 12)
     CLOSE(file)
 END SUBROUTINE
 
@@ -138,27 +138,26 @@ SUBROUTINE test_multipoles_sequential ()
     ! tests
     print *, '# monopole'
     OPEN(file, file = TRIM(out_dir)//"test_monopole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 1)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 10)
     CLOSE(file)
 
     print *, '# quadrupole'
     OPEN(file, file = TRIM(out_dir)//"test_quadrupole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 4)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 11)
     CLOSE(file)
 
     print *, '# octupole'
     OPEN(file, file = TRIM(out_dir)//"test_octupole.txt", status="replace")
-    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 8)
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 12)
     CLOSE(file)
 END SUBROUTINE
 
 !===============================================
 ! UTILITIES
 !===============================================
-SUBROUTINE test_forces_time (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt, multipole)
-    INTEGER,  INTENT(IN) :: Nmin, Nmax, Nstep, tests, file, nt
+SUBROUTINE test_forces_time (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt, method)
+    INTEGER,  INTENT(IN) :: Nmin, Nmax, Nstep, tests, file, nt, method
     REAL(pf), INTENT(IN) :: thetas(:), eps2
-    INTEGER,  INTENT(IN) :: multipole
     INTEGER :: N, i_test, i_theta, p
     REAL(pf), ALLOCATABLE :: m(:), qs(:,:), ps(:,:)       ! state vectors
     REAL(pf), ALLOCATABLE :: forces(:,:), forces_dir(:,:) ! forces
@@ -192,31 +191,41 @@ SUBROUTINE test_forces_time (Nmin, Nmax, Nstep, thetas, eps2, tests, file, nt, m
             WRITE(file, *) N, -1.0_pf, 0.0_pf, total, 0.0_pf
 
             ALLOCATE(tree)
+            CALL tree % pre_init(m, method)
 
             time_start = omp_get_wtime()
-                CALL tree % init(m, qs(1,:), qs(2,:), qs(3,:), multipole)
+                CALL tree % init(qs(1,:), qs(2,:), qs(3,:))
             time_finish = omp_get_wtime()
             time_generate_tree = time_finish - time_start
 
             DO i_theta = 1, SIZE(thetas)
                 theta = thetas(i_theta)**2
 
-                time_start = omp_get_wtime()
-                    ! now test the tree
-                    IF (nt == 1) THEN
-                        DO p = 1, N
-                            forces(:,p) = tree % forces(p, theta, 1.0_pf, eps2)
-                        END DO
-                    ELSE
-                        !$OMP PARALLEL DO SHARED(forces) PRIVATE(p) NUM_THREADS(nt) &
-                        !$OMP SCHEDULE(DYNAMIC)
-                        DO p = 1, N
-                            forces(:,p) = tree % forces(p, theta, 1.0_pf, eps2)
-                        END DO
-                        !$OMP END PARALLEL DO
-                    ENDIF
-                time_finish = omp_get_wtime()
-                total = time_finish - time_start + time_generate_tree
+                IF (method == 10 .OR. method == 11 .OR. method == 12) THEN
+                    time_start = omp_get_wtime()
+                        ! now test the tree
+                        IF (nt == 1) THEN
+                            DO p = 1, N
+                                forces(:,p) = tree % forces(p, theta, 1.0_pf, eps2)
+                            END DO
+                        ELSE
+                            !$OMP PARALLEL DO SHARED(forces) PRIVATE(p) NUM_THREADS(nt) &
+                            !$OMP SCHEDULE(DYNAMIC)
+                            DO p = 1, N
+                                forces(:,p) = tree % forces(p, theta, 1.0_pf, eps2)
+                            END DO
+                            !$OMP END PARALLEL DO
+                        ENDIF
+                    time_finish = omp_get_wtime()
+                    total = time_finish - time_start + time_generate_tree
+                ELSE IF (method == 20 .OR. method == 21) THEN
+                    time_start = omp_get_wtime()
+                        CALL tree % dehnen_eval(theta, eps2, 1.0_pf, forces)
+                    time_finish = omp_get_wtime()
+                    total = time_finish - time_start + time_generate_tree
+                ELSE
+                    STOP "method not identified!"
+                ENDIF
 
                 CALL evaluate_error_on_accelerations(m, qs, forces, forces_dir, error)
 

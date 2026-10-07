@@ -13,11 +13,11 @@ DF_LIB = $(FORTRAN_DIR)/direct_forces.f90
 
 SRC = ${FORTRAN_DIR}/octree_default.f90 ${DF_LIB} $(SOURCES_IV)
 
-TARGET = forces_time_and_error
+TARGET = integration
 
 all:
 	mkdir -p build
 	$(FC) -Jbuild $(FFLAGS) $(SRC) $(TARGET).f90 -o $(TARGET)
 
 clean:
-	rm -rf forces_time_and_error *.o *.mod
+	rm -rf integration *.o *.mod
