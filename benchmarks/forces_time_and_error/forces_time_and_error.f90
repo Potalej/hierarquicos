@@ -15,7 +15,53 @@ PROGRAM forces_time_and_error
 
     ! Test: Sequential
     CALL test_multipoles_sequential()
+
+    ! Test: like the forces_timeR3 of the fortran folder
+    CALL forces_timeR3()
 CONTAINS
+
+SUBROUTINE forces_timeR3 ()
+    CHARACTER(LEN=100) :: out_dir
+    REAL(pf) :: thetas(4), eps
+    INTEGER  :: number_of_threads, number_of_tests
+    INTEGER  :: Nmin, Nmax, Nstep
+    INTEGER  :: file = 13
+    
+    NAMELIST /preset/ number_of_threads, number_of_tests, thetas, eps, Nmin, Nmax, Nstep
+
+    out_dir = "out/forces_timeR3/"
+    CALL SYSTEM("mkdir -p "//TRIM(out_dir))
+
+    number_of_threads = 15
+    number_of_tests = 20
+    eps = 0.0_pf
+    thetas = [0.25_pf, 0.5_pf, 0.75_pf, 1.0_pf]
+
+    Nmin = 500
+    Nmax = 10000
+    Nstep = 500
+
+    ! preset file
+    OPEN(file, file=TRIM(out_dir)//"preset.nml")
+    WRITE(file, nml=preset)
+    CLOSE(file)
+
+    ! tests
+    print *, '# monopole'
+    OPEN(file, file = TRIM(out_dir)//"test_multipoles_thetas_monopole.txt", status="replace")
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 10)
+    CLOSE(file)
+
+    print *, '# quadrupole'
+    OPEN(file, file = TRIM(out_dir)//"test_multipoles_thetas_quadrupole.txt", status="replace")
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 11)
+    CLOSE(file)
+
+    print *, '# octupole'
+    OPEN(file, file = TRIM(out_dir)//"test_multipoles_thetas_octupole.txt", status="replace")
+    CALL test_forces_time(Nmin, Nmax, Nstep, thetas, eps**2, number_of_tests, file, number_of_threads, 12)
+    CLOSE(file)
+END SUBROUTINE
 
 SUBROUTINE test_mcmillan_aarseth_results ()
 ! Here I'll reproduce the results of Aarseths and McMillan in the O(NlogN) for
