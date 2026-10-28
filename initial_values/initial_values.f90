@@ -48,18 +48,29 @@ SUBROUTINE api (size_qs, size_ps, nm, td, pr, pp, m, qs, ps)
     CALL generate_initial_values(SIZE(m), m, qs, ps, size_qs, size_ps, nm, td, pr, pp)
 END SUBROUTINE
 
-SUBROUTINE generate_initial_values (N, m, qs, ps, size_qs, size_ps, nm, td, pr, pp)
+SUBROUTINE generate_initial_values (N, m, qs, ps, size_qs, size_ps, nm, td, pr, pp, seed)
     INTEGER,  INTENT(IN) :: N
     REAL(8), INTENT(IN) :: size_qs, size_ps
     LOGICAL,  INTENT(IN) :: nm ! normalized masses
     LOGICAL,  INTENT(IN) :: td ! two dimensional
     CHARACTER(LEN=*), INTENT(IN), OPTIONAL :: pr ! mass profile
     REAL(8), INTENT(IN), OPTIONAL         :: pp(:) ! profile parameters
+    INTEGER, INTENT(IN), OPTIONAL         :: seed
     REAL(8), INTENT(INOUT) :: m(N), qs(3,N), ps(3,N)
     REAL(8) :: r(N), vr(N) ! radius and radial velocities
 
     REAL(8) :: tlm(3), com(3), big_ps, max_ps(3)
     INTEGER :: p
+
+    INTEGER :: seed_size
+    INTEGER, ALLOCATABLE :: seed_vec(:)
+
+    IF (PRESENT(seed)) THEN
+        CALL RANDOM_SEED(size=seed_size)
+        ALLOCATE(seed_vec(seed_size))
+        seed_vec = seed
+        CALL RANDOM_SEED(put=seed_vec)
+    ENDIF
 
     ! the massas can be equal or no
     IF (nm) THEN 
