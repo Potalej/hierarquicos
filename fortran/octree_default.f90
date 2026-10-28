@@ -1679,13 +1679,13 @@ SUBROUTINE group_worker (self, theta2, G, eps2, forces)
         group_last   = self % ns_last(group_number)
 
         ! box that contains all the particles of the group
-        group_min(1) = MINVAL(self % gx(group_first:group_last))
-        group_min(2) = MINVAL(self % gy(group_first:group_last))
-        group_min(3) = MINVAL(self % gz(group_first:group_last))
-        group_max(1) = MAXVAL(self % gx(group_first:group_last))
-        group_max(2) = MAXVAL(self % gy(group_first:group_last))
-        group_max(3) = MAXVAL(self % gz(group_first:group_last))
-
+        group_min = [ self % ns_cx(group_number) - self % ns_halfside(group_number), &
+                      self % ns_cy(group_number) - self % ns_halfside(group_number), &
+                      self % ns_cz(group_number) - self % ns_halfside(group_number) ]
+        group_max = [ self % ns_cx(group_number) + self % ns_halfside(group_number), &
+                      self % ns_cy(group_number) + self % ns_halfside(group_number), &
+                      self % ns_cz(group_number) + self % ns_halfside(group_number) ]
+        
         ! traversing the tree for all the group, making the lists
         ns = 0
         nc = 0
