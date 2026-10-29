@@ -11,11 +11,14 @@ SOURCES_IV := $(addprefix $(ROOT_DIR)/initial_values/, $(FILES_IV))
 FORCES_LIB = $(FORTRAN_DIR)/direct_forces.f90
 SRC = ../test_forces.f90 ${FORTRAN_DIR}/octree_default.f90 ${FORCES_LIB} $(SOURCES_IV)
 
-TARGET = forces_time_and_error
-
 all:
 	mkdir -p build
-	$(FC) -Jbuild $(FFLAGS) $(SRC) $(TARGET).f90 -o $(TARGET)
+
+time_and_error:
+	$(FC) -Jbuild $(FFLAGS) $(SRC) forces_time_and_error.f90 -o forces_time_and_error
+
+only_time:
+	$(FC) -Jbuild $(FFLAGS) $(SRC) forces_only_time.f90 -o forces_only_time
 
 clean:
 	rm -rf forces_time_and_error *.o *.mod

@@ -15,7 +15,7 @@ PROGRAM forces_time_and_error
     out_dir = "out/forces_time_and_error/"
     CALL SYSTEM("mkdir -p "//TRIM(out_dir))
 
-    nt = 15
+    nt = 20
     eps2 = 0.0_pf**2
     eval_df = .TRUE.
 
