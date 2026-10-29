@@ -1,4 +1,4 @@
-MODULE forces_mod
+MODULE direct_forces_mod
     IMPLICIT NONE
     PRIVATE
     PUBLIC compute_forces_direct
