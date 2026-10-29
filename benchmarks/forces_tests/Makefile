@@ -9,7 +9,7 @@ FORTRAN_DIR = $(ROOT_DIR)/fortran
 FILES_IV := $(shell cat $(ROOT_DIR)/initial_values/module.txt)
 SOURCES_IV := $(addprefix $(ROOT_DIR)/initial_values/, $(FILES_IV))
 FORCES_LIB = $(FORTRAN_DIR)/direct_forces.f90
-SRC = ../test_forces.f90 ${FORTRAN_DIR}/octree_default.f90 ${FORCES_LIB} $(SOURCES_IV)
+SRC = ${FORTRAN_DIR}/octree_default.f90 ../test_forces.f90 ${FORCES_LIB} $(SOURCES_IV)
 
 all:
 	mkdir -p build
