@@ -16,7 +16,7 @@ arvre = arvore.Arvore(m, x, y, plotar=True)
 plt.scatter(x,y,c='black',s=20)
 plt.axis('off')
 plt.tight_layout()
-plt.savefig("quadtree.png")
+plt.savefig("img/quadtree.png")
 plt.close()
 
 def plotar_no (no, x, h, dx):
@@ -32,8 +32,8 @@ def plotar_no (no, x, h, dx):
     pos = x - 1.5*dx    
     for filho in no.filhos:
         if not filho.eh_folha:
-            if h > 1.0:
-                plotar_no(filho, pos, h, dx / 2)
+            if h > 1.5:
+                plotar_no(filho, pos, h, dx)
             else:
                 plotar_no(filho, pos, h, dx / 4)
             pos = pos + dx
@@ -45,6 +45,6 @@ def plotar_arvore (tree):
     plotar_no(raiz, 0.0, 0.5, 1.0)
     plt.axis('off')
     plt.tight_layout()
-    plt.savefig("tree.png")
+    plt.savefig("img/tree.png")
     
 plotar_arvore(arvre)
