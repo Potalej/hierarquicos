@@ -14,6 +14,9 @@ SRC = ${FORTRAN_DIR}/octree_default.f90 ../test_forces.f90 ${FORCES_LIB} $(SOURC
 all:
 	mkdir -p build
 
+only_time_brucutuvi:
+	$(FC) -Jbuild $(FFLAGS) $(SRC) brucutuvi_forces_only_time.f90 -o brucutuvi_forces_only_time
+
 time_and_error:
 	$(FC) -Jbuild $(FFLAGS) $(SRC) forces_time_and_error.f90 -o forces_time_and_error
 
