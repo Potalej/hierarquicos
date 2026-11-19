@@ -1,5 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "Helvetica"
+})
 color = "#bb8cd1"
 
 plt.figure(figsize=(4,4))
@@ -55,7 +59,7 @@ part = [0.0, 0.0]
 plt.scatter(*part, c='black', s=100)
 
 theta = 0.7
-phi = np.atan(p)
+phi = np.arctan(p)
 m = np.tan(phi + theta/2)
 L = np.sqrt(1**2 + p**2) / np.cos(theta / 2)
 x = L / np.sqrt(1 + m**2)
